@@ -98,9 +98,12 @@ async function handleChat(request, env) {
     return json({ error: "`messages` array is required." }, 400);
   }
 
-  const models = modelList(env);
-  const requested = typeof body.model === "string" ? body.model : "";
-  const model = models.includes(requested) ? requested : (env.DEFAULT_MODEL || models[0]);
+  // Forward whatever model the client picked (users curate their own list and
+  // may add any model the backend offers). The backend validates the name and
+  // the visitor's key — no server-side whitelist. Fall back to the default
+  // only when no model was supplied.
+  const requested = typeof body.model === "string" ? body.model.trim() : "";
+  const model = requested || env.DEFAULT_MODEL || modelList(env)[0];
   const options = sanitizeOptions(body.options);
 
   let upstream;
