@@ -10,7 +10,15 @@ const els = {
   model: $('model'), headerTitle: $('headerTitle'),
   main: $('main'), thread: $('thread'), scrollBtn: $('scrollBtn'),
   input: $('input'), send: $('send'), err: $('err'),
+  settingsBtn: $('settingsBtn'), settingsPanel: $('settingsPanel'),
+  tempSlider: $('tempSlider'), tempVal: $('tempVal'),
 };
+
+const DEFAULT_TEMP = 0.8;
+const TEMP_KEY = 'mt_default_temp';
+function defaultTemp() { const v = parseFloat(localStorage.getItem(TEMP_KEY)); return isFinite(v) ? v : DEFAULT_TEMP; }
+function currentTemp() { return (current && typeof current.temperature === 'number') ? current.temperature : defaultTemp(); }
+function syncTempUI() { const t = currentTemp(); els.tempSlider.value = t; els.tempVal.textContent = t.toFixed(2); }
 
 let apiKey = localStorage.getItem(KEY_STORE) || '';
 let current = null;              // active conversation { id, title, model, messages: [] }
@@ -130,7 +138,7 @@ function enterApp() { showApp(true); openMostRecentOrNew(); renderSidebar(); }
 function newConversation() {
   current = { id: uid(), title: 'New chat', model: els.model.value, messages: [], updatedAt: Date.now() };
   store.setActive(current.id);
-  renderConversation(); renderSidebar();
+  renderConversation(); renderSidebar(); syncTempUI();
   els.input.focus();
 }
 function openConversation(id) {
@@ -138,7 +146,7 @@ function openConversation(id) {
   if (!conv) return;
   current = conv; store.setActive(id);
   if (conv.model && [...els.model.options].some((o) => o.value === conv.model)) els.model.value = conv.model;
-  renderConversation(); renderSidebar();
+  renderConversation(); renderSidebar(); syncTempUI();
 }
 function openMostRecentOrNew() {
   const list = store.list();
@@ -284,7 +292,7 @@ async function streamAssistant() {
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ model: els.model.value, messages: reqMsgs }),
+      body: JSON.stringify({ model: els.model.value, messages: reqMsgs, options: { temperature: currentTemp() } }),
       signal: controller.signal,
     });
     if (resp.status === 401) { disconnect(); throw new Error('Your key was rejected — please reconnect.'); }
@@ -375,6 +383,16 @@ els.input.addEventListener('input', autosize);
 els.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!streaming) send(); } });
 els.main.addEventListener('scroll', () => { autoFollow = nearBottom(); els.scrollBtn.classList.toggle('hidden', autoFollow); });
 els.scrollBtn.addEventListener('click', () => { autoFollow = true; scrollDown(true); });
+
+els.settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); syncTempUI(); els.settingsPanel.classList.toggle('hidden'); });
+els.settingsPanel.addEventListener('click', (e) => e.stopPropagation());
+els.tempSlider.addEventListener('input', () => {
+  const t = parseFloat(els.tempSlider.value);
+  els.tempVal.textContent = t.toFixed(2);
+  try { localStorage.setItem(TEMP_KEY, String(t)); } catch (e) {}
+  if (current) { current.temperature = t; if (current.messages.length) store.save(current); }
+});
+document.addEventListener('click', () => els.settingsPanel.classList.add('hidden'));
 
 /* ---------- Boot ---------- */
 (async function boot() {

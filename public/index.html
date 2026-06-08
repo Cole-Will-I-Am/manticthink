@@ -50,6 +50,17 @@
         </div>
         <span class="spacer"></span>
         <select id="model" title="Model"></select>
+        <div class="settings-wrap">
+          <button id="settingsBtn" class="icon-btn" title="Generation settings" aria-label="Settings">⚙</button>
+          <div id="settingsPanel" class="settings-panel hidden">
+            <div class="sp-head">Generation</div>
+            <div class="sp-row">
+              <div class="sp-label"><span>Temperature</span><span id="tempVal">0.80</span></div>
+              <input id="tempSlider" type="range" min="0" max="2" step="0.05" value="0.8" />
+              <div class="sp-hint">Lower = focused &amp; precise · Higher = creative</div>
+            </div>
+          </div>
+        </div>
       </header>
 
       <main id="main">

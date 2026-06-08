@@ -28,6 +28,21 @@ function bearer(request) {
   return /^bearer\s+\S+/i.test(auth) ? auth : null;
 }
 
+// Whitelist + clamp client-supplied sampling options before forwarding upstream.
+const OPTION_BOUNDS = {
+  temperature: [0, 2], top_p: [0, 1], top_k: [0, 200],
+  min_p: [0, 1], repeat_penalty: [0, 2], num_predict: [1, 8192],
+};
+function sanitizeOptions(raw) {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out = {};
+  for (const [k, [lo, hi]] of Object.entries(OPTION_BOUNDS)) {
+    const v = raw[k];
+    if (typeof v === "number" && isFinite(v)) out[k] = Math.min(hi, Math.max(lo, v));
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function upstreamBase(env) {
   return (env.OLLAMA_BASE_URL || "https://ollama.com").replace(/\/+$/, "");
 }
@@ -68,13 +83,14 @@ async function handleChat(request, env) {
   const models = modelList(env);
   const requested = typeof body.model === "string" ? body.model : "";
   const model = models.includes(requested) ? requested : (env.DEFAULT_MODEL || models[0]);
+  const options = sanitizeOptions(body.options);
 
   let upstream;
   try {
     upstream = await fetch(upstreamBase(env) + "/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: auth },
-      body: JSON.stringify({ model, messages, stream: true }),
+      body: JSON.stringify({ model, messages, stream: true, ...(options ? { options } : {}) }),
     });
   } catch {
     return json({ error: "Could not reach the model backend." }, 502);

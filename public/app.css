@@ -155,6 +155,30 @@ select#model {
   background-repeat: no-repeat; background-position: right 12px center;
 }
 
+/* settings popover */
+.settings-wrap { position: relative; }
+.settings-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 12; width: 248px;
+  background: var(--surface); border: 0.5px solid var(--border-light); border-radius: 14px;
+  padding: 14px; box-shadow: 0 12px 34px rgba(0,0,0,0.5);
+}
+.sp-head { font-size: 9px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 12px; }
+.sp-label { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-primary); margin-bottom: 8px; }
+.sp-label span:last-child { color: var(--accent); font-variant-numeric: tabular-nums; }
+.sp-hint { font-size: 10.5px; color: var(--text-tertiary); margin-top: 8px; line-height: 1.4; }
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px;
+  background: var(--bg-tertiary); outline: none; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)); border: 2px solid var(--bg-primary); cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--bg-primary);
+  background: var(--accent); cursor: pointer;
+}
+
 main {
   position: relative; flex: 1; overflow-y: auto; display: flex; flex-direction: column;
 }
