@@ -357,6 +357,17 @@ textarea#input:focus { border-color: rgba(97,121,255,0.4); }
   .col { max-width: 94%; }
 }
 
+/* Touch devices: no hover, so reveal hover-only controls and stop iOS
+   zoom-on-focus by keeping interactive inputs at >=16px. */
+@media (hover: none) {
+  .conv-actions { display: flex; }
+  .copy-btn { opacity: 1; }
+  .actions { opacity: 1; }
+  textarea#input, .card input, .mm-add input, .mm-search { font-size: 16px; }
+  .conv-act { width: 30px; height: 30px; }
+  .act-btn { padding: 6px 10px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .typing span, .cursor::after { animation: none; }
   #sidebar { transition: none; }
