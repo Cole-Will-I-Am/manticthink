@@ -1,0 +1,110 @@
+// SEER · Mantic Think — Cloudflare Worker (bring-your-own-key)
+// Serves the SEER-styled chat UI and proxies chat to an Ollama-compatible
+// backend using a key supplied by each visitor. The key travels in the
+// Authorization header from the browser and is forwarded upstream; it is never
+// stored or logged server-side.
+//
+// Config (wrangler.toml [vars]):
+//   OLLAMA_BASE_URL  upstream base, default https://ollama.com
+//   CHAT_MODELS      comma-separated model list shown in the picker
+//   DEFAULT_MODEL    model used when a request omits one
+
+const FALLBACK_MODELS = "gpt-oss:120b-cloud,qwen3-coder:480b-cloud,deepseek-v3.1:671b-cloud";
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
+function modelList(env) {
+  return (env.CHAT_MODELS || FALLBACK_MODELS)
+    .split(",").map((m) => m.trim()).filter(Boolean);
+}
+
+function bearer(request) {
+  const auth = request.headers.get("authorization") || "";
+  return /^bearer\s+\S+/i.test(auth) ? auth : null;
+}
+
+function upstreamBase(env) {
+  return (env.OLLAMA_BASE_URL || "https://ollama.com").replace(/\/+$/, "");
+}
+
+// Confirm a visitor's key is accepted by the backend. Uses the authenticated
+// /api/me endpoint, which returns 401 for an invalid key (unlike /api/tags,
+// which is unauthenticated on Ollama Cloud).
+async function handleValidate(request, env) {
+  const auth = bearer(request);
+  if (!auth) return json({ ok: false, error: "Enter your Ollama API key." }, 200);
+  try {
+    const r = await fetch(upstreamBase(env) + "/api/me", {
+      method: "POST",
+      headers: { authorization: auth },
+    });
+    if (r.ok) return json({ ok: true }, 200);
+    if (r.status === 401 || r.status === 403) {
+      return json({ ok: false, error: "That key was rejected." }, 200);
+    }
+    return json({ ok: false, error: `Could not verify key (${r.status}).` }, 200);
+  } catch {
+    return json({ ok: false, error: "Could not reach the model backend." }, 200);
+  }
+}
+
+async function handleChat(request, env) {
+  const auth = bearer(request);
+  if (!auth) return json({ error: "Missing API key." }, 401);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Invalid JSON body." }, 400); }
+
+  const messages = body.messages;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return json({ error: "`messages` array is required." }, 400);
+  }
+
+  const models = modelList(env);
+  const requested = typeof body.model === "string" ? body.model : "";
+  const model = models.includes(requested) ? requested : (env.DEFAULT_MODEL || models[0]);
+
+  let upstream;
+  try {
+    upstream = await fetch(upstreamBase(env) + "/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: auth },
+      body: JSON.stringify({ model, messages, stream: true }),
+    });
+  } catch {
+    return json({ error: "Could not reach the model backend." }, 502);
+  }
+
+  if (upstream.status === 401 || upstream.status === 403) {
+    return json({ error: "Your API key was rejected. Reconnect with a valid key." }, 401);
+  }
+  if (!upstream.ok || !upstream.body) {
+    const detail = await upstream.text().catch(() => "");
+    return json({ error: `Backend error (${upstream.status}).`, detail: detail.slice(0, 300) }, 502);
+  }
+
+  return new Response(upstream.body, {
+    headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/models") return json({ models: modelList(env) });
+    if (url.pathname === "/api/validate") {
+      if (request.method !== "POST") return json({ error: "Use POST." }, 405);
+      return handleValidate(request, env);
+    }
+    if (url.pathname === "/api/chat") {
+      if (request.method !== "POST") return json({ error: "Use POST." }, 405);
+      return handleChat(request, env);
+    }
+    return env.ASSETS.fetch(request);
+  },
+};

@@ -1,0 +1,29 @@
+name = "manticthink"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+# SEER chat UI is served from ./public as static assets; the Worker handles /api/*.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# Non-secret config (edit freely, then redeploy). The model list shows in the
+# picker; set these to the Ollama models you actually have access to.
+[vars]
+OLLAMA_BASE_URL = "https://ollama.com"
+CHAT_MODELS = "gpt-oss:120b,gpt-oss:20b,deepseek-v3.2,qwen3-coder:480b,glm-5,kimi-k2.6,qwen3.5:397b,minimax-m2.7,gemma3:27b"
+DEFAULT_MODEL = "gpt-oss:120b"
+
+# Bring-your-own-key: each visitor enters their own Ollama API key in the browser.
+# The Worker forwards it upstream per request and never stores it, so there is NO
+# server-side OLLAMA_API_KEY secret to set.
+#
+# Custom domains — Cloudflare manages DNS + TLS automatically.
+[[routes]]
+pattern = "manticthink.com"
+custom_domain = true
+
+[[routes]]
+pattern = "www.manticthink.com"
+custom_domain = true
