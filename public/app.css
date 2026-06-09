@@ -191,6 +191,8 @@ select#model {
 }
 .set-field input:focus { border-color: rgba(97,121,255,0.4); }
 .set-foot { display: flex; gap: 16px; align-items: center; }
+.set-check { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-primary); cursor: pointer; }
+.set-check input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
 .sb-area { min-height: 64px; }
 
 /* active scaffold bar */
@@ -341,6 +343,12 @@ main {
 .bubble table { border-collapse: collapse; margin: 0.7em 0; display: block; overflow-x: auto; }
 .bubble th, .bubble td { border: 0.5px solid var(--border); padding: 6px 10px; text-align: left; font-size: 13.5px; }
 .bubble th { background: var(--bg-tertiary); }
+
+/* model-generated visuals */
+.diagram { margin: 0.8em 0; padding: 14px; background: var(--bg-primary); border: 0.5px solid var(--border); border-radius: 12px; overflow-x: auto; text-align: center; }
+.diagram svg { max-width: 100%; height: auto; }
+.chart-box { position: relative; margin: 0.8em 0; padding: 14px; background: var(--bg-primary); border: 0.5px solid var(--border); border-radius: 12px; height: 320px; }
+.diagram-err { margin: 0.8em 0; padding: 10px 12px; border: 0.5px solid var(--danger); border-radius: 10px; color: var(--danger); font-size: 12px; font-family: var(--mono); white-space: pre-wrap; }
 .copy-btn {
   position: absolute; top: 8px; right: 8px; z-index: 1;
   background: rgba(255,255,255,0.06); color: var(--text-secondary); border: 0.5px solid var(--border);

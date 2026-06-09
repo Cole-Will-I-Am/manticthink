@@ -130,6 +130,11 @@
             <input id="pStop" type="text" autocomplete="off" placeholder="comma-separated, e.g. ###, END" />
           </label>
         </div>
+        <div class="set-section">
+          <div class="mm-label">Rendering</div>
+          <label class="set-check"><input id="visualsToggle" type="checkbox" /> <span>Let models draw charts &amp; diagrams</span></label>
+          <div class="sp-hint">Adds a hint so models can emit <code>mermaid</code> diagrams and <code>chart</code> blocks, rendered inline. Markdown tables always render.</div>
+        </div>
         <div class="sp-foot set-foot">
           <button id="setReset" class="sp-link" type="button">Reset to defaults</button>
           <button id="manageModelsBtn" class="sp-link" type="button">Manage models →</button>

@@ -13,6 +13,7 @@ const els = {
   settingsBtn: $('settingsBtn'), settingsModal: $('settingsModal'), setClose: $('setClose'),
   paramSliders: $('paramSliders'), sysPrompt: $('sysPrompt'),
   pNumPredict: $('pNumPredict'), pSeed: $('pSeed'), pStop: $('pStop'), setReset: $('setReset'),
+  visualsToggle: $('visualsToggle'),
   manageModelsBtn: $('manageModelsBtn'), modelModal: $('modelModal'), mmClose: $('mmClose'),
   mmYours: $('mmYours'), mmInput: $('mmInput'), mmAdd: $('mmAdd'),
   mmSearch: $('mmSearch'), mmCatalog: $('mmCatalog'), mmCount: $('mmCount'),
@@ -110,6 +111,7 @@ function renderSettings() {
   const np = effective('num_predict'); els.pNumPredict.value = (typeof np === 'number') ? np : '';
   const sd = effective('seed'); els.pSeed.value = (typeof sd === 'number') ? sd : '';
   const st = effective('stop'); els.pStop.value = (Array.isArray(st) && st.length) ? st.join(', ') : '';
+  els.visualsToggle.checked = visualsOn();
 }
 function openSettings() { renderSettings(); els.settingsModal.classList.remove('hidden'); }
 function closeSettings() { els.settingsModal.classList.add('hidden'); }
@@ -381,6 +383,17 @@ const SUGGESTIONS = [
   'Three startup ideas in climate tech',
 ];
 
+// Capability hint so models know they can emit inline visuals (toggle in settings).
+const VISUALS_KEY = 'mt_visuals';
+function visualsOn() { return localStorage.getItem(VISUALS_KEY) !== '0'; }
+const VISUALS_HINT = [
+  'You can include rich visuals directly in replies; they render as interactive elements, not code:',
+  '- Diagrams: a fenced ```mermaid block (flowchart, sequence, pie, gantt, timeline, mindmap, state, class).',
+  '- Data charts: a fenced ```chart block whose body is a Chart.js v4 JSON config, e.g. {"type":"bar","data":{"labels":[...],"datasets":[{"label":"...","data":[...]}]}}. JSON only, no JavaScript.',
+  '- Tables: a normal GitHub-flavored Markdown table.',
+  'Use a visual only when it genuinely aids understanding, and keep accompanying prose concise. Do not describe these formats or your tools to the user — just produce the visual.',
+].join('\n');
+
 /* ---------- Markdown (sanitized) ---------- */
 if (window.marked) marked.setOptions({ gfm: true, breaks: true });
 if (window.DOMPurify) {
@@ -394,9 +407,62 @@ function renderMarkdown(text) {
     ? DOMPurify.sanitize(dirty, { FORBID_TAGS: ['style', 'script', 'iframe', 'form', 'input', 'button'], FORBID_ATTR: ['style'] })
     : '';
 }
+/* ---------- Visuals: mermaid diagrams + chart.js charts (lazy-loaded) ---------- */
+let _mermaidP = null, _chartP = null, _mmId = 0;
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.async = true;
+    s.onload = () => res(); s.onerror = () => rej(new Error('Failed to load ' + src));
+    document.head.appendChild(s);
+  });
+}
+function ensureMermaid() {
+  if (window.mermaid) return Promise.resolve(window.mermaid);
+  if (!_mermaidP) _mermaidP = loadScript('/vendor/mermaid.bundle.js').then(() => {
+    window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict', fontFamily: 'inherit' });
+    return window.mermaid;
+  });
+  return _mermaidP;
+}
+function ensureChart() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  if (!_chartP) _chartP = loadScript('/vendor/chart.umd.min.js').then(() => {
+    const C = window.Chart;
+    C.defaults.color = '#9aa0aa'; C.defaults.borderColor = 'rgba(255,255,255,0.08)';
+    if (C.defaults.font) C.defaults.font.family = 'inherit';
+    return C;
+  });
+  return _chartP;
+}
+// Replace ```mermaid and ```chart code fences in a rendered bubble with live visuals.
+function renderVisuals(bubble) {
+  bubble.querySelectorAll('pre code.language-mermaid').forEach((code) => {
+    const pre = code.closest('pre'); if (!pre) return;
+    const src = code.textContent || '';
+    const holder = document.createElement('div'); holder.className = 'diagram';
+    pre.replaceWith(holder);
+    ensureMermaid().then((m) => m.render('mmd' + (++_mmId), src)).then((out) => {
+      holder.innerHTML = (out && out.svg) || '';   // mermaid securityLevel:'strict' sanitizes its own output
+      maybeScroll();
+    }).catch((e) => { holder.className = 'diagram-err'; holder.textContent = 'Diagram error: ' + ((e && e.message) || e); });
+  });
+  bubble.querySelectorAll('pre code.language-chart').forEach((code) => {
+    const pre = code.closest('pre'); if (!pre) return;
+    let cfg; try { cfg = JSON.parse(code.textContent || ''); } catch (e) { return; }   // leave invalid JSON as a code block
+    if (!cfg || typeof cfg !== 'object' || !cfg.type) return;
+    cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false }, cfg.options || {});
+    const holder = document.createElement('div'); holder.className = 'chart-box';
+    const canvas = document.createElement('canvas'); holder.appendChild(canvas);
+    pre.replaceWith(holder);
+    ensureChart().then((C) => { try { new C(canvas, cfg); maybeScroll(); } catch (e) { holder.className = 'diagram-err'; holder.textContent = 'Chart error: ' + ((e && e.message) || e); } })
+      .catch(() => { holder.className = 'diagram-err'; holder.textContent = 'Chart failed to load.'; });
+  });
+}
+
 function renderAssistantHTML(bubble, text) {
   bubble.classList.remove('plain');
   bubble.innerHTML = renderMarkdown(text);
+  renderVisuals(bubble);
   bubble.querySelectorAll('pre code').forEach((el) => { try { window.hljs && hljs.highlightElement(el); } catch (e) {} });
   bubble.querySelectorAll('pre').forEach((pre) => {
     if (pre.querySelector('.copy-btn')) return;
@@ -718,6 +784,7 @@ async function streamAssistant() {
     const reqMsgs = [];
     const scaf = activeScaffold();
     if (scaf) { reqMsgs.push({ role: 'system', content: compileScaffold(scaf) }); touchScaffold(scaf.id); }
+    if (visualsOn()) reqMsgs.push({ role: 'system', content: VISUALS_HINT });
     const sys = effectiveSystem().trim();
     if (sys) reqMsgs.push({ role: 'system', content: sys });
     for (const m of current.messages) reqMsgs.push({ role: m.role, content: m.content });
@@ -835,6 +902,7 @@ els.pStop.addEventListener('input', () => {
   setParam('stop', arr.length ? arr : undefined);
 });
 els.setReset.addEventListener('click', resetSettings);
+els.visualsToggle.addEventListener('change', () => { try { localStorage.setItem(VISUALS_KEY, els.visualsToggle.checked ? '1' : '0'); } catch (e) {} });
 
 els.manageModelsBtn.addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); openModelModal(); });
 els.mmClose.addEventListener('click', closeModelModal);
