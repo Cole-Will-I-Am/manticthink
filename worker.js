@@ -1,3 +1,4 @@
+// SEER · Mantic Think — © 2026 Colton Williams. All rights reserved.
 // SEER · Mantic Think — Cloudflare Worker (bring-your-own-key)
 // Serves the SEER-styled chat UI and proxies chat to an Ollama-compatible
 // backend using a key supplied by each visitor. The key travels in the

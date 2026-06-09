@@ -1,14 +1,20 @@
 {
   "name": "manticthink",
   "version": "1.0.0",
-  "description": "",
+  "description": "SEER · Mantic Think — a SEER-styled, bring-your-own-key Ollama chat website on a Cloudflare Worker.",
   "main": "worker.js",
+  "private": true,
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Colton Williams (https://www.linkedin.com/in/colton-williams)",
+  "license": "UNLICENSED",
+  "homepage": "https://manticthink.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Cole-Will-I-Am/MaticThink.git"
+  },
   "devDependencies": {
     "wrangler": "^4.98.0"
   }

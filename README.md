@@ -49,3 +49,11 @@ CLOUDFLARE_API_TOKEN=… npx wrangler deploy
 
 Custom domains (`manticthink.com`, `www.manticthink.com`) are attached via the
 `[[routes]]` entries in `wrangler.toml`.
+
+## Author & license
+
+Created and owned by **Colton Williams** — [LinkedIn](https://www.linkedin.com/in/colton-williams).
+
+© 2026 Colton Williams. All rights reserved. This project is proprietary; see
+[`LICENSE`](./LICENSE). No use, copying, or distribution without written
+permission.
