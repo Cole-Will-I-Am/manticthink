@@ -185,6 +185,11 @@ header .wordmark { height: 15px; }
 }
 .icon-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
 .icon-btn svg { display: block; }
+.hdr-tools { display: inline-flex; align-items: center; gap: 2px; }
+.tools-slot:empty { display: none; }
+.tools-slot { padding: 4px 14px 12px; }
+.hdr-tools.in-sidebar { display: flex; width: 100%; justify-content: space-around; gap: 6px; padding: 5px; border: 0.5px solid var(--border); border-radius: 12px; }
+.hdr-tools.in-sidebar .icon-btn { width: 46px; height: 40px; }
 .icon-btn.on { color: var(--accent); }
 
 /* github */

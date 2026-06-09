@@ -1636,6 +1636,20 @@ els.snippetsModal.addEventListener('click', (e) => { if (e.target === els.snippe
 els.snSearch.addEventListener('input', renderSnippets);
 if (loadSnippets().length) els.snippetsBtn.classList.add('on');
 
+// On phones the header is too narrow for the model picker + tool icons, so move
+// the tool cluster (saved code / GitHub / scaffolds / settings) into the drawer.
+const toolsMq = window.matchMedia('(max-width: 760px)');
+function placeTools() {
+  const tools = document.getElementById('hdrTools');
+  const slot = document.getElementById('toolsSlot');
+  const header = document.querySelector('header');
+  if (!tools || !slot || !header) return;
+  if (toolsMq.matches) { slot.appendChild(tools); tools.classList.add('in-sidebar'); }
+  else { header.appendChild(tools); tools.classList.remove('in-sidebar'); }
+}
+toolsMq.addEventListener('change', placeTools);
+placeTools();
+
 els.githubBtn.addEventListener('click', (e) => { e.stopPropagation(); openGithubModal(); });
 els.ghClose.addEventListener('click', closeGithubModal);
 els.githubModal.addEventListener('click', (e) => { if (e.target === els.githubModal) closeGithubModal(); });
