@@ -10,18 +10,102 @@ const els = {
   model: $('model'), headerTitle: $('headerTitle'),
   main: $('main'), thread: $('thread'), scrollBtn: $('scrollBtn'),
   input: $('input'), send: $('send'), err: $('err'),
-  settingsBtn: $('settingsBtn'), settingsPanel: $('settingsPanel'),
-  tempSlider: $('tempSlider'), tempVal: $('tempVal'),
+  settingsBtn: $('settingsBtn'), settingsModal: $('settingsModal'), setClose: $('setClose'),
+  paramSliders: $('paramSliders'), sysPrompt: $('sysPrompt'),
+  pNumPredict: $('pNumPredict'), pSeed: $('pSeed'), pStop: $('pStop'), setReset: $('setReset'),
   manageModelsBtn: $('manageModelsBtn'), modelModal: $('modelModal'), mmClose: $('mmClose'),
   mmYours: $('mmYours'), mmInput: $('mmInput'), mmAdd: $('mmAdd'),
   mmSearch: $('mmSearch'), mmCatalog: $('mmCatalog'), mmCount: $('mmCount'),
 };
 
-const DEFAULT_TEMP = 0.8;
-const TEMP_KEY = 'mt_default_temp';
-function defaultTemp() { const v = parseFloat(localStorage.getItem(TEMP_KEY)); return isFinite(v) ? v : DEFAULT_TEMP; }
-function currentTemp() { return (current && typeof current.temperature === 'number') ? current.temperature : defaultTemp(); }
-function syncTempUI() { const t = currentTemp(); els.tempSlider.value = t; els.tempVal.textContent = t.toFixed(2); }
+/* ---------- Generation settings (per-conversation, with global defaults) ---------- */
+// Each conversation may override these via `current.params` (numbers / stop[]) and
+// `current.system` (string). Editing a control also writes through to the global
+// defaults (mt_default_params), so the next new chat inherits the last-used values.
+const PARAM_DEFS = [
+  { key: 'temperature',    label: 'Temperature',    min: 0, max: 2,   step: 0.05, def: 0.8, fmt: (v) => v.toFixed(2) },
+  { key: 'top_p',          label: 'Top P',          min: 0, max: 1,   step: 0.01, def: 0.9, fmt: (v) => v.toFixed(2) },
+  { key: 'top_k',          label: 'Top K',          min: 0, max: 200, step: 1,    def: 40,  fmt: (v) => String(v | 0) },
+  { key: 'min_p',          label: 'Min P',          min: 0, max: 1,   step: 0.01, def: 0.0, fmt: (v) => v.toFixed(2) },
+  { key: 'repeat_penalty', label: 'Repeat penalty', min: 0, max: 2,   step: 0.01, def: 1.1, fmt: (v) => v.toFixed(2) },
+];
+const PARAM_DEFAULTS_KEY = 'mt_default_params';
+const SLIDER_KEYS = new Set(PARAM_DEFS.map((d) => d.key));
+
+let paramDefaults = (() => {
+  try { const v = JSON.parse(localStorage.getItem(PARAM_DEFAULTS_KEY)); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; }
+})();
+// Migrate the old single-temperature default, if present.
+(function migrateTemp() {
+  const t = parseFloat(localStorage.getItem('mt_default_temp'));
+  if (isFinite(t) && paramDefaults.temperature === undefined) { paramDefaults.temperature = t; saveDefaults(); }
+})();
+function saveDefaults() { try { localStorage.setItem(PARAM_DEFAULTS_KEY, JSON.stringify(paramDefaults)); } catch (e) {} }
+
+// Effective value for the active conversation: per-conv override → global default → factory.
+function effective(key) {
+  if (current && current.params && current.params[key] !== undefined) return current.params[key];
+  if (paramDefaults[key] !== undefined) return paramDefaults[key];
+  const d = PARAM_DEFS.find((p) => p.key === key);
+  return d ? d.def : undefined;
+}
+function effectiveSystem() {
+  if (current && typeof current.system === 'string') return current.system;
+  return (typeof paramDefaults._system === 'string') ? paramDefaults._system : '';
+}
+function isUnset(val) { return val === undefined || val === null || (Array.isArray(val) && !val.length); }
+function setParam(key, val) {
+  if (!current) return;
+  current.params = current.params || {};
+  if (isUnset(val)) { delete current.params[key]; delete paramDefaults[key]; }
+  else { current.params[key] = val; paramDefaults[key] = val; }
+  saveDefaults();
+  if (current.messages.length) store.save(current);
+}
+function setSystem(text) {
+  if (!current) return;
+  current.system = text;
+  if (text) paramDefaults._system = text; else delete paramDefaults._system;
+  saveDefaults();
+  if (current.messages.length) store.save(current);
+}
+function resetSettings() {
+  paramDefaults = {}; saveDefaults();
+  if (current) { current.params = {}; current.system = ''; if (current.messages.length) store.save(current); }
+  renderSettings();
+}
+
+// Build the upstream `options` object from the active conversation's effective values.
+function buildOptions() {
+  const o = {};
+  for (const d of PARAM_DEFS) { const v = effective(d.key); if (typeof v === 'number') o[d.key] = v; }
+  const np = effective('num_predict'); if (typeof np === 'number') o.num_predict = np;
+  const sd = effective('seed'); if (typeof sd === 'number') o.seed = sd;
+  const st = effective('stop'); if (Array.isArray(st) && st.length) o.stop = st;
+  return o;
+}
+
+function renderSettings() {
+  els.paramSliders.innerHTML = '';
+  for (const d of PARAM_DEFS) {
+    const v = effective(d.key);
+    const row = document.createElement('div'); row.className = 'sp-row';
+    const lab = document.createElement('div'); lab.className = 'sp-label';
+    const name = document.createElement('span'); name.textContent = d.label;
+    const val = document.createElement('span'); val.textContent = d.fmt(v);
+    lab.appendChild(name); lab.appendChild(val);
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = d.min; inp.max = d.max; inp.step = d.step; inp.value = v;
+    inp.addEventListener('input', () => { const nv = parseFloat(inp.value); val.textContent = d.fmt(nv); setParam(d.key, nv); });
+    row.appendChild(lab); row.appendChild(inp); els.paramSliders.appendChild(row);
+  }
+  els.sysPrompt.value = effectiveSystem();
+  const np = effective('num_predict'); els.pNumPredict.value = (typeof np === 'number') ? np : '';
+  const sd = effective('seed'); els.pSeed.value = (typeof sd === 'number') ? sd : '';
+  const st = effective('stop'); els.pStop.value = (Array.isArray(st) && st.length) ? st.join(', ') : '';
+}
+function openSettings() { renderSettings(); els.settingsModal.classList.remove('hidden'); }
+function closeSettings() { els.settingsModal.classList.add('hidden'); }
 
 let apiKey = localStorage.getItem(KEY_STORE) || '';
 let current = null;              // active conversation { id, title, model, messages: [] }
@@ -181,7 +265,7 @@ async function loadCatalog() {
   catalogLoaded = true; renderCatalog();
 }
 function openModelModal() {
-  els.settingsPanel.classList.add('hidden');
+  closeSettings();
   els.mmInput.value = ''; els.mmSearch.value = '';
   els.modelModal.classList.remove('hidden');
   renderYours(); renderCatalog();
@@ -215,15 +299,19 @@ function enterApp() { showApp(true); openMostRecentOrNew(); renderSidebar(); }
 function newConversation() {
   current = { id: uid(), title: 'New chat', model: els.model.value, messages: [], updatedAt: Date.now() };
   store.setActive(current.id);
-  renderConversation(); renderSidebar(); syncTempUI();
+  renderConversation(); renderSidebar();
   els.input.focus();
 }
 function openConversation(id) {
   const conv = store.load(id);
   if (!conv) return;
+  // Migrate the legacy per-conversation `temperature` field into `params`.
+  if (typeof conv.temperature === 'number' && (!conv.params || conv.params.temperature === undefined)) {
+    conv.params = conv.params || {}; conv.params.temperature = conv.temperature;
+  }
   current = conv; store.setActive(id);
   if (conv.model && [...els.model.options].some((o) => o.value === conv.model)) els.model.value = conv.model;
-  renderConversation(); renderSidebar(); syncTempUI();
+  renderConversation(); renderSidebar();
 }
 function openMostRecentOrNew() {
   const list = store.list();
@@ -365,11 +453,14 @@ async function streamAssistant() {
   setStreaming(true);
   let acc = '', accThink = '', stats = null, firstTok = false, sawContent = false, failed = false;
   try {
-    const reqMsgs = current.messages.map((m) => ({ role: m.role, content: m.content }));
+    const reqMsgs = [];
+    const sys = effectiveSystem().trim();
+    if (sys) reqMsgs.push({ role: 'system', content: sys });
+    for (const m of current.messages) reqMsgs.push({ role: m.role, content: m.content });
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeader() },
-      body: JSON.stringify({ model: els.model.value, messages: reqMsgs, options: { temperature: currentTemp() } }),
+      body: JSON.stringify({ model: els.model.value, messages: reqMsgs, options: buildOptions() }),
       signal: controller.signal,
     });
     if (resp.status === 401) { disconnect(); throw new Error('Your key was rejected — please reconnect.'); }
@@ -461,17 +552,27 @@ els.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shift
 els.main.addEventListener('scroll', () => { autoFollow = nearBottom(); els.scrollBtn.classList.toggle('hidden', autoFollow); });
 els.scrollBtn.addEventListener('click', () => { autoFollow = true; scrollDown(true); });
 
-els.settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); syncTempUI(); els.settingsPanel.classList.toggle('hidden'); });
-els.settingsPanel.addEventListener('click', (e) => e.stopPropagation());
-els.tempSlider.addEventListener('input', () => {
-  const t = parseFloat(els.tempSlider.value);
-  els.tempVal.textContent = t.toFixed(2);
-  try { localStorage.setItem(TEMP_KEY, String(t)); } catch (e) {}
-  if (current) { current.temperature = t; if (current.messages.length) store.save(current); }
+els.settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); openSettings(); });
+els.setClose.addEventListener('click', closeSettings);
+els.settingsModal.addEventListener('click', (e) => { if (e.target === els.settingsModal) closeSettings(); });
+els.sysPrompt.addEventListener('input', () => setSystem(els.sysPrompt.value));
+els.pNumPredict.addEventListener('input', () => {
+  const r = els.pNumPredict.value.trim();
+  if (r === '') return setParam('num_predict', undefined);
+  const n = parseInt(r, 10); setParam('num_predict', isFinite(n) ? n : undefined);
 });
-document.addEventListener('click', () => els.settingsPanel.classList.add('hidden'));
+els.pSeed.addEventListener('input', () => {
+  const r = els.pSeed.value.trim();
+  if (r === '') return setParam('seed', undefined);
+  const n = parseInt(r, 10); setParam('seed', isFinite(n) ? n : undefined);
+});
+els.pStop.addEventListener('input', () => {
+  const arr = els.pStop.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  setParam('stop', arr.length ? arr : undefined);
+});
+els.setReset.addEventListener('click', resetSettings);
 
-els.manageModelsBtn.addEventListener('click', (e) => { e.stopPropagation(); openModelModal(); });
+els.manageModelsBtn.addEventListener('click', (e) => { e.stopPropagation(); closeSettings(); openModelModal(); });
 els.mmClose.addEventListener('click', closeModelModal);
 els.modelModal.addEventListener('click', (e) => { if (e.target === els.modelModal) closeModelModal(); });
 els.mmAdd.addEventListener('click', () => { addModel(els.mmInput.value); els.mmInput.value = ''; });

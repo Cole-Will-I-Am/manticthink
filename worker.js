@@ -31,7 +31,7 @@ function bearer(request) {
 // Whitelist + clamp client-supplied sampling options before forwarding upstream.
 const OPTION_BOUNDS = {
   temperature: [0, 2], top_p: [0, 1], top_k: [0, 200],
-  min_p: [0, 1], repeat_penalty: [0, 2], num_predict: [1, 8192],
+  min_p: [0, 1], repeat_penalty: [0, 2],
 };
 function sanitizeOptions(raw) {
   if (!raw || typeof raw !== "object") return undefined;
@@ -39,6 +39,24 @@ function sanitizeOptions(raw) {
   for (const [k, [lo, hi]] of Object.entries(OPTION_BOUNDS)) {
     const v = raw[k];
     if (typeof v === "number" && isFinite(v)) out[k] = Math.min(hi, Math.max(lo, v));
+  }
+  // num_predict: -1 means "until context fills"; otherwise clamp to a generous ceiling.
+  if (typeof raw.num_predict === "number" && isFinite(raw.num_predict)) {
+    const n = Math.trunc(raw.num_predict);
+    if (n === -1) out.num_predict = -1;
+    else if (n >= 1) out.num_predict = Math.min(131072, n);
+  }
+  // seed: any non-negative integer, for reproducible sampling.
+  if (typeof raw.seed === "number" && isFinite(raw.seed)) {
+    out.seed = Math.max(0, Math.trunc(raw.seed));
+  }
+  // stop: up to 8 non-empty strings (<=64 chars each) that halt generation.
+  if (Array.isArray(raw.stop)) {
+    const stop = raw.stop
+      .filter((s) => typeof s === "string" && s.length)
+      .slice(0, 8)
+      .map((s) => s.slice(0, 64));
+    if (stop.length) out.stop = stop;
   }
   return Object.keys(out).length ? out : undefined;
 }

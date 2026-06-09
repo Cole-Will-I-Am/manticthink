@@ -169,6 +169,28 @@ select#model {
 .sp-foot { margin-top: 12px; padding-top: 12px; border-top: 0.5px solid var(--border); }
 .sp-link { background: none; border: none; color: var(--accent); font-size: 12px; cursor: pointer; font-family: var(--font); padding: 0; }
 .sp-link:hover { text-decoration: underline; }
+.sp-row { margin-bottom: 16px; }
+.sp-row:last-child { margin-bottom: 0; }
+.sp-hint code { font-family: var(--mono); font-size: 0.92em; color: var(--text-secondary); }
+
+/* generation settings modal */
+.set-section { margin-bottom: 22px; }
+.set-section:last-child { margin-bottom: 0; }
+.set-textarea {
+  width: 100%; min-height: 92px; resize: vertical; background: var(--surface); color: var(--text-primary);
+  border: 0.5px solid var(--border-light); border-radius: 10px; padding: 10px 12px;
+  font-family: var(--font); font-size: 13.5px; line-height: 1.5; outline: none;
+}
+.set-textarea:focus { border-color: rgba(97,121,255,0.4); }
+.set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.set-field { display: flex; flex-direction: column; gap: 6px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+.set-field-wide { margin-top: 12px; }
+.set-field input {
+  background: var(--surface); color: var(--text-primary); border: 0.5px solid var(--border-light);
+  border-radius: 10px; padding: 9px 11px; font-family: var(--mono); font-size: 13px; outline: none; text-transform: none; letter-spacing: 0;
+}
+.set-field input:focus { border-color: rgba(97,121,255,0.4); }
+.set-foot { display: flex; gap: 16px; align-items: center; }
 
 /* model management modal */
 .modal { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,0.55); }
