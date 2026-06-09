@@ -696,6 +696,22 @@ function ensureChart() {
   });
   return _chartP;
 }
+// Give chart datasets visible colors when the model omits them (Chart.js defaults
+// are near-invisible on the dark theme).
+const CHART_PALETTE = ['#6179ff', '#8c61f2', '#3ddb8f', '#ffb454', '#ff5d8f', '#4dd0e1', '#b388ff', '#f06292'];
+function applyChartDefaults(cfg) {
+  const ds = (cfg.data && cfg.data.datasets) || [];
+  const perPoint = ['pie', 'doughnut', 'polarArea'].includes(cfg.type);
+  ds.forEach((d, i) => {
+    if (d.backgroundColor == null) {
+      if (perPoint) d.backgroundColor = (d.data || []).map((_, j) => CHART_PALETTE[j % CHART_PALETTE.length]);
+      else if (cfg.type === 'line') d.backgroundColor = 'rgba(97,121,255,0.15)';
+      else d.backgroundColor = CHART_PALETTE[i % CHART_PALETTE.length];
+    }
+    if (d.borderColor == null && (cfg.type === 'line' || cfg.type === 'radar')) d.borderColor = CHART_PALETTE[i % CHART_PALETTE.length];
+  });
+}
+
 // Replace ```mermaid and ```chart code fences in a rendered bubble with live visuals.
 function renderVisuals(bubble) {
   bubble.querySelectorAll('pre code.language-mermaid').forEach((code) => {
@@ -713,6 +729,7 @@ function renderVisuals(bubble) {
     let cfg; try { cfg = JSON.parse(code.textContent || ''); } catch (e) { return; }   // leave invalid JSON as a code block
     if (!cfg || typeof cfg !== 'object' || !cfg.type) return;
     cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false }, cfg.options || {});
+    applyChartDefaults(cfg);
     const holder = document.createElement('div'); holder.className = 'chart-box';
     const canvas = document.createElement('canvas'); holder.appendChild(canvas);
     pre.replaceWith(holder);
