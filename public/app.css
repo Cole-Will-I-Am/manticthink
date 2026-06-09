@@ -415,15 +415,32 @@ main {
 .diagram-err { margin: 0.8em 0; padding: 10px 12px; border: 0.5px solid var(--danger); border-radius: 10px; color: var(--danger); font-size: 12px; font-family: var(--mono); white-space: pre-wrap; }
 .code-actions { position: absolute; top: 8px; right: 8px; z-index: 1; display: flex; gap: 6px; opacity: 0; transition: opacity .15s; }
 .bubble pre:hover .code-actions { opacity: 1; }
-.copy-btn, .run-btn {
+.copy-btn, .run-btn, .save-btn {
   background: rgba(255,255,255,0.06); color: var(--text-secondary); border: 0.5px solid var(--border);
   border-radius: 7px; padding: 4px 9px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
   cursor: pointer; font-family: var(--font);
 }
-.copy-btn:hover, .run-btn:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
-.copy-btn.ok { color: var(--success); }
+.copy-btn:hover, .run-btn:hover, .save-btn:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+.copy-btn.ok, .save-btn.ok { color: var(--success); }
 .run-btn { color: var(--accent); }
 .run-btn:disabled { color: var(--text-tertiary); cursor: default; }
+
+/* saved code library */
+.sn-list { display: flex; flex-direction: column; gap: 12px; }
+.sn-empty { font-size: 12px; color: var(--text-tertiary); }
+.sn-item { border: 0.5px solid var(--border); border-radius: 12px; overflow: hidden; }
+.sn-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface-2); border-bottom: 0.5px solid var(--border); flex-wrap: wrap; }
+.sn-title { font-size: 12.5px; color: var(--text-primary); font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 42%; }
+.sn-badge { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); border: 0.5px solid var(--border-light); border-radius: 999px; padding: 2px 7px; }
+.sn-acts { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.sn-btn { background: var(--accent-soft); color: var(--accent); border: none; border-radius: 7px; padding: 4px 9px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; font-family: var(--font); }
+.sn-btn:hover { background: rgba(97,121,255,0.18); }
+.sn-ghost { background: transparent; color: var(--text-tertiary); }
+.sn-ghost:hover { background: var(--surface); color: var(--text-primary); }
+.sn-del:hover { color: var(--danger); }
+.sn-item pre { margin: 0; background: var(--surface-2); position: relative; }
+.sn-item pre code { display: block; padding: 12px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow-x: auto; max-height: 240px; }
+.sn-item .run-output { margin: 0; border-radius: 0; border-left: none; border-right: none; border-bottom: none; }
 
 /* code execution output */
 .run-output { margin: -2px 0 0.9em; border: 0.5px solid var(--border); border-radius: 10px; background: var(--bg-primary); font-family: var(--mono); font-size: 12px; overflow: hidden; }

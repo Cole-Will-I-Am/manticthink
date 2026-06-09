@@ -25,6 +25,7 @@ const els = {
   sbName: $('sbName'), sbSummary: $('sbSummary'), sbRole: $('sbRole'), sbPerspective: $('sbPerspective'), sbTone: $('sbTone'),
   sbSteps: $('sbSteps'), sbMust: $('sbMust'), sbNever: $('sbNever'), sbDisc: $('sbDisc'), sbProh: $('sbProh'),
   sbPreview: $('sbPreview'), sbSave: $('sbSave'), sbCancel: $('sbCancel'),
+  snippetsBtn: $('snippetsBtn'), snippetsModal: $('snippetsModal'), snClose: $('snClose'), snSearch: $('snSearch'), snList: $('snList'),
   githubBtn: $('githubBtn'), githubModal: $('githubModal'), ghClose: $('ghClose'),
   ghGate: $('ghGate'), ghBrowser: $('ghBrowser'), ghToken: $('ghToken'), ghGateErr: $('ghGateErr'), ghConnect: $('ghConnect'),
   ghLogin: $('ghLogin'), ghDisconnect: $('ghDisconnect'), ghRepoSearch: $('ghRepoSearch'), ghRepoGo: $('ghRepoGo'), ghRepos: $('ghRepos'),
@@ -631,6 +632,67 @@ async function ghAttachSelected() {
   if (added) els.input.focus();
 }
 
+/* ---------- Saved code snippets ---------- */
+const SNIPPETS_KEY = 'mt_snippets';
+function loadSnippets() { try { const v = JSON.parse(localStorage.getItem(SNIPPETS_KEY)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function saveSnippetsList(list) { try { localStorage.setItem(SNIPPETS_KEY, JSON.stringify(list)); } catch (e) {} }
+function saveSnippet(code, language) {
+  code = (code || '').replace(/\s+$/, '');
+  if (!code.trim()) return;
+  const all = loadSnippets();
+  if (all.some((s) => s.code === code)) return;   // already saved
+  const title = (code.split('\n').find((l) => l.trim()) || 'snippet').trim().slice(0, 60);
+  all.unshift({ id: uidS(), title, language: language || '', code, createdAt: Date.now() });
+  saveSnippetsList(all);
+  if (els.snippetsBtn) els.snippetsBtn.classList.add('on');
+}
+function deleteSnippet(id) { saveSnippetsList(loadSnippets().filter((s) => s.id !== id)); renderSnippets(); }
+function renameSnippet(id) {
+  const all = loadSnippets(); const s = all.find((x) => x.id === id); if (!s) return;
+  const nt = prompt('Rename snippet', s.title);
+  if (nt && nt.trim()) { s.title = nt.trim().slice(0, 80); saveSnippetsList(all); renderSnippets(); }
+}
+function openSnippetsModal() { els.snSearch.value = ''; renderSnippets(); els.snippetsModal.classList.remove('hidden'); }
+function closeSnippetsModal() { els.snippetsModal.classList.add('hidden'); }
+function renderSnippets() {
+  const q = (els.snSearch.value || '').trim().toLowerCase();
+  let list = loadSnippets();
+  if (q) list = list.filter((s) => s.title.toLowerCase().includes(q) || s.code.toLowerCase().includes(q) || (s.language || '').toLowerCase().includes(q));
+  els.snList.innerHTML = '';
+  if (!list.length) {
+    els.snList.innerHTML = '<div class="sn-empty">' + (q ? 'No matching snippets.' : 'No saved code yet — click “Save” on any code block.') + '</div>';
+    return;
+  }
+  for (const s of list) {
+    const item = document.createElement('div'); item.className = 'sn-item';
+    const head = document.createElement('div'); head.className = 'sn-head';
+    const title = document.createElement('span'); title.className = 'sn-title'; title.textContent = s.title; title.title = s.title;
+    head.appendChild(title);
+    if (s.language) { const badge = document.createElement('span'); badge.className = 'sn-badge'; badge.textContent = s.language; head.appendChild(badge); }
+    const acts = document.createElement('div'); acts.className = 'sn-acts';
+    const pre = document.createElement('pre'); const code = document.createElement('code');
+    if (s.language) code.className = 'language-' + s.language;
+    code.textContent = s.code; pre.appendChild(code);
+    const lang = (s.language || '').toLowerCase();
+    const isPy = ['py', 'python', 'python3'].includes(lang), isJs = ['js', 'javascript', 'mjs', 'node'].includes(lang);
+    if (isPy || isJs) {
+      const run = document.createElement('button'); run.className = 'sn-btn'; run.type = 'button'; run.textContent = '▶ Run';
+      run.addEventListener('click', () => runCodeBlock(pre, s.code, isPy ? 'python' : 'javascript', run));
+      acts.appendChild(run);
+    }
+    const copy = document.createElement('button'); copy.className = 'sn-btn'; copy.type = 'button'; copy.textContent = 'Copy';
+    copy.addEventListener('click', () => { navigator.clipboard.writeText(s.code); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1200); });
+    acts.appendChild(copy);
+    const ren = document.createElement('button'); ren.className = 'sn-btn sn-ghost'; ren.type = 'button'; ren.textContent = 'Rename';
+    ren.addEventListener('click', () => renameSnippet(s.id)); acts.appendChild(ren);
+    const del = document.createElement('button'); del.className = 'sn-btn sn-ghost sn-del'; del.type = 'button'; del.textContent = 'Delete';
+    del.addEventListener('click', () => { if (confirm('Delete this snippet?')) deleteSnippet(s.id); }); acts.appendChild(del);
+    head.appendChild(acts);
+    item.append(head, pre); els.snList.appendChild(item);
+    try { window.hljs && hljs.highlightElement(code); } catch (e) {}
+  }
+}
+
 let apiKey = localStorage.getItem(KEY_STORE) || '';
 let current = null;              // active conversation { id, title, model, messages: [] }
 let streaming = false;
@@ -918,6 +980,13 @@ function renderAssistantHTML(bubble, text) {
       run.addEventListener('click', () => runCodeBlock(pre, (codeEl ? codeEl.textContent : pre.textContent), isPy ? 'python' : 'javascript', run));
       actions.appendChild(run);
     }
+    const save = document.createElement('button'); save.className = 'save-btn'; save.type = 'button'; save.textContent = 'Save';
+    save.addEventListener('click', () => {
+      saveSnippet(codeEl ? codeEl.textContent : pre.textContent, lang);
+      save.textContent = 'Saved'; save.classList.add('ok');
+      setTimeout(() => { save.textContent = 'Save'; save.classList.remove('ok'); }, 1200);
+    });
+    actions.appendChild(save);
     const copy = document.createElement('button'); copy.className = 'copy-btn'; copy.type = 'button'; copy.textContent = 'Copy';
     copy.addEventListener('click', () => {
       navigator.clipboard.writeText(codeEl ? codeEl.innerText : pre.innerText);
@@ -1428,6 +1497,12 @@ els.model.addEventListener('change', () => { if (current) { current.model = els.
 els.send.addEventListener('click', () => { if (streaming) { if (controller) controller.abort(); } else send(); });
 els.attachBtn.addEventListener('click', () => els.fileInput.click());
 els.fileInput.addEventListener('change', () => { addFiles(els.fileInput.files); els.fileInput.value = ''; });
+
+els.snippetsBtn.addEventListener('click', (e) => { e.stopPropagation(); openSnippetsModal(); });
+els.snClose.addEventListener('click', closeSnippetsModal);
+els.snippetsModal.addEventListener('click', (e) => { if (e.target === els.snippetsModal) closeSnippetsModal(); });
+els.snSearch.addEventListener('input', renderSnippets);
+if (loadSnippets().length) els.snippetsBtn.classList.add('on');
 
 els.githubBtn.addEventListener('click', (e) => { e.stopPropagation(); openGithubModal(); });
 els.ghClose.addEventListener('click', closeGithubModal);
