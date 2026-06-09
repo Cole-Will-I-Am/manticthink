@@ -66,10 +66,13 @@
 
       <footer>
         <div class="err" id="err" style="display:none"></div>
+        <div id="attachBar" class="attach-bar hidden"></div>
         <div class="composer">
+          <button id="attachBtn" class="composer-attach" type="button" title="Attach files" aria-label="Attach files">📎</button>
           <textarea id="input" rows="1" placeholder="Message SEER…"></textarea>
           <button id="send" title="Send" aria-label="Send">↑</button>
         </div>
+        <input id="fileInput" type="file" multiple hidden accept=".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.mjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.cc,.cs,.php,.sh,.bash,.sql,.toml,.ini,.cfg,.log" />
       </footer>
     </div>
   </div>

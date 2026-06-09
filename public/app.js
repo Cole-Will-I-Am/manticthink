@@ -10,6 +10,7 @@ const els = {
   model: $('model'), headerTitle: $('headerTitle'),
   main: $('main'), thread: $('thread'), scrollBtn: $('scrollBtn'),
   input: $('input'), send: $('send'), err: $('err'),
+  attachBtn: $('attachBtn'), fileInput: $('fileInput'), attachBar: $('attachBar'),
   settingsBtn: $('settingsBtn'), settingsModal: $('settingsModal'), setClose: $('setClose'),
   paramSliders: $('paramSliders'), sysPrompt: $('sysPrompt'),
   pNumPredict: $('pNumPredict'), pSeed: $('pSeed'), pStop: $('pStop'), setReset: $('setReset'),
@@ -784,13 +785,18 @@ function renderEmpty() {
 }
 function removeEmptyState() { const e = els.thread.querySelector('.empty'); if (e) e.remove(); }
 
-function addUserBubble(text) {
+function addUserBubble(text, attachments) {
   const wrap = document.createElement('div'); wrap.className = 'msg user';
   const col = document.createElement('div'); col.className = 'col';
   const role = document.createElement('div'); role.className = 'role'; role.textContent = 'You';
-  const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = text;
-  col.appendChild(role); col.appendChild(bubble); wrap.appendChild(col);
-  els.thread.appendChild(wrap); scrollDown();
+  col.appendChild(role);
+  if (attachments && attachments.length) {
+    const ab = document.createElement('div'); ab.className = 'msg-attachments';
+    for (const a of attachments) { const c = document.createElement('span'); c.className = 'msg-att'; c.textContent = '📎 ' + a.name; ab.appendChild(c); }
+    col.appendChild(ab);
+  }
+  if (text) { const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = text; col.appendChild(bubble); }
+  wrap.appendChild(col); els.thread.appendChild(wrap); scrollDown();
 }
 
 function buildAssistantNode() {
@@ -854,7 +860,7 @@ function renderConversation() {
   renderScaffoldBar();
   if (!current || current.messages.length === 0) { renderEmpty(); updateHeaderTitle(); return; }
   for (const m of current.messages) {
-    if (m.role === 'user') addUserBubble(m.content);
+    if (m.role === 'user') addUserBubble(m.displayText != null ? m.displayText : m.content, m.attachments);
     else if (m.role === 'assistant') renderAssistantMessage(m);
   }
   updateHeaderTitle(); autoFollow = true; scrollDown(true);
@@ -954,20 +960,105 @@ async function streamAssistant() {
   current.messages.push({ role: 'assistant', content: acc, thinking: accThink || undefined, stats: stats || undefined });
   if (current.title === 'New chat') {
     const fu = current.messages.find((m) => m.role === 'user');
-    if (fu) current.title = (fu.content.slice(0, 42).trim() || 'New chat');
+    if (fu) {
+      const base = (fu.displayText && fu.displayText.trim()) ? fu.displayText
+        : (fu.attachments && fu.attachments[0] ? fu.attachments[0].name : fu.content);
+      current.title = (base.slice(0, 42).trim() || 'New chat');
+    }
   }
   store.save(current); renderSidebar(); updateHeaderTitle(); maybeScroll(true);
 }
 
+/* ---------- File attachments (per-message, text-extracted) ---------- */
+let pendingAttachments = [];
+let _pdfjsP = null;
+function ensurePdfjs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!_pdfjsP) _pdfjsP = loadScript('/vendor/pdf.min.js').then(() => {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
+    return window.pdfjsLib;
+  });
+  return _pdfjsP;
+}
+const ATT_TEXT_RE = /\.(txt|md|markdown|csv|tsv|json|ya?ml|xml|html?|css|js|mjs|ts|tsx|jsx|py|rb|go|rs|java|c|h|cpp|cc|cs|php|sh|bash|sql|toml|ini|cfg|log)$/i;
+function isPdfFile(f) { return /\.pdf$/i.test(f.name) || f.type === 'application/pdf'; }
+function isTextFile(f) { return ATT_TEXT_RE.test(f.name) || (f.type || '').startsWith('text/'); }
+const ATT_TEXT_CAP = 200000;
+
+async function extractPdfText(buf) {
+  const pdfjs = await ensurePdfjs();
+  const doc = await pdfjs.getDocument({ data: buf }).promise;
+  const maxPages = Math.min(doc.numPages, 80);
+  const out = [];
+  for (let i = 1; i <= maxPages; i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    out.push(tc.items.map((it) => it.str).join(' '));
+  }
+  return { text: out.join('\n\n').replace(/[ \t]+/g, ' ').trim(), pages: doc.numPages, truncated: doc.numPages > maxPages };
+}
+
+async function addFiles(fileList) {
+  for (const file of [...fileList]) {
+    const att = { id: uidS(), name: file.name, size: file.size, text: '', status: 'loading', error: '', note: '' };
+    pendingAttachments.push(att); renderAttachments();
+    try {
+      if (isPdfFile(file)) {
+        if (file.size > 15 * 1024 * 1024) throw new Error('PDF too large (max 15 MB)');
+        const r = await extractPdfText(await file.arrayBuffer());
+        if (!r.text) throw new Error('No selectable text (scanned image?)');
+        att.text = r.text; att.note = r.truncated ? `first 80 of ${r.pages} pages` : `${r.pages} pages`;
+      } else if (isTextFile(file)) {
+        if (file.size > 1024 * 1024) throw new Error('File too large (max 1 MB)');
+        att.text = await file.text();
+      } else {
+        throw new Error('Unsupported file type');
+      }
+      if (att.text.length > ATT_TEXT_CAP) { att.text = att.text.slice(0, ATT_TEXT_CAP); att.note = (att.note ? att.note + ', ' : '') + 'truncated'; }
+      att.status = 'ready';
+    } catch (e) { att.status = 'error'; att.error = (e && e.message) || 'Could not read file'; }
+    renderAttachments();
+  }
+}
+function removeAttachment(id) { pendingAttachments = pendingAttachments.filter((a) => a.id !== id); renderAttachments(); }
+function renderAttachments() {
+  const bar = els.attachBar; if (!bar) return;
+  bar.innerHTML = '';
+  if (!pendingAttachments.length) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  for (const a of pendingAttachments) {
+    const chip = document.createElement('span');
+    chip.className = 'attach-chip' + (a.status === 'error' ? ' err' : a.status === 'loading' ? ' loading' : '');
+    const name = document.createElement('span'); name.className = 'ac-name'; name.textContent = '📎 ' + a.name;
+    const meta = document.createElement('span'); meta.className = 'ac-meta';
+    meta.textContent = a.status === 'loading' ? 'reading…' : a.status === 'error' ? a.error : (a.note || fmtBytes(a.size));
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.title = 'Remove';
+    x.addEventListener('click', () => removeAttachment(a.id));
+    chip.append(name, meta, x); bar.appendChild(chip);
+  }
+}
+function buildMessageContent(typed, atts) {
+  const parts = [];
+  if (typed) parts.push(typed);
+  for (const a of atts) parts.push('## Attached file: ' + a.name + '\n```\n' + a.text + '\n```');
+  return parts.join('\n\n');
+}
+
 async function send() {
-  const text = els.input.value.trim();
-  if (!text || streaming) return;
+  if (streaming) return;
+  if (pendingAttachments.some((a) => a.status === 'loading')) { showErr('Still reading a file — one moment.'); return; }
+  const ready = pendingAttachments.filter((a) => a.status === 'ready');
+  const typed = els.input.value.trim();
+  if (!typed && !ready.length) return;
   showErr('');
   els.input.value = ''; autosize();
   if (!current) newConversation();
   removeEmptyState();
-  current.messages.push({ role: 'user', content: text });
-  addUserBubble(text);
+  const content = buildMessageContent(typed, ready);
+  const attachments = ready.map((a) => ({ name: a.name, size: a.size }));
+  current.messages.push({ role: 'user', content, displayText: typed, attachments: attachments.length ? attachments : undefined });
+  addUserBubble(typed, attachments);
+  pendingAttachments = []; renderAttachments();
   autoFollow = true;
   await streamAssistant();
 }
@@ -999,6 +1090,8 @@ els.menuBtn.addEventListener('click', openDrawer);
 els.scrim.addEventListener('click', closeDrawer);
 els.model.addEventListener('change', () => { if (current) { current.model = els.model.value; } });
 els.send.addEventListener('click', () => { if (streaming) { if (controller) controller.abort(); } else send(); });
+els.attachBtn.addEventListener('click', () => els.fileInput.click());
+els.fileInput.addEventListener('change', () => { addFiles(els.fileInput.files); els.fileInput.value = ''; });
 els.input.addEventListener('input', autosize);
 els.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!streaming) send(); } });
 els.main.addEventListener('scroll', () => { autoFollow = nearBottom(); els.scrollBtn.classList.toggle('hidden', autoFollow); });
