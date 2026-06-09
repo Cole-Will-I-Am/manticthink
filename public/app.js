@@ -753,7 +753,8 @@ console.error=function(){ send('error',arguments); };
 self.onmessage=async function(e){
   postMessage({type:'ready'});
   try{
-    const r= await eval('(async()=>{'+e.data+'\\n})()');
+    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+    const r= await (new AsyncFunction(e.data))();
     if(r!==undefined) send('result',[r]);
   }catch(err){ send('error',[ (err&&err.stack)||String(err) ]); }
   postMessage({type:'done'});
@@ -810,6 +811,17 @@ function runPy(code, onMsg, onDone) {
   w.postMessage(code);
 }
 
+// Clean common copy-paste / model artifacts that break parsers: BOM, a leading
+// shebang line, non-breaking/unicode spaces, and smart quotes.
+function normalizeRunCode(s) {
+  return (s || '')
+    .replace(/^﻿/, '')
+    .replace(/^#!.*\r?\n/, '')
+    .replace(/ /g, ' ')
+    .replace(/[‘’‛]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[ -   　]/g, ' ');
+}
 function ensureRunPanel(pre) {
   let p = pre.nextElementSibling;
   if (!p || !p.classList.contains('run-output')) { p = document.createElement('div'); p.className = 'run-output'; pre.after(p); }
@@ -817,6 +829,7 @@ function ensureRunPanel(pre) {
 }
 function runCodeBlock(pre, code, lang, runBtn) {
   const isPy = lang === 'python';
+  code = normalizeRunCode(code);
   const panel = ensureRunPanel(pre); panel.innerHTML = '';
   const head = document.createElement('div'); head.className = 'ro-head';
   const label = document.createElement('span'); label.textContent = (isPy ? 'Python' : 'JavaScript') + ' output';
@@ -854,7 +867,7 @@ function renderAssistantHTML(bubble, text) {
     const actions = document.createElement('div'); actions.className = 'code-actions';
     if (isPy || isJs) {
       const run = document.createElement('button'); run.className = 'run-btn'; run.type = 'button'; run.textContent = '▶ Run';
-      run.addEventListener('click', () => runCodeBlock(pre, (codeEl ? codeEl.innerText : pre.innerText), isPy ? 'python' : 'javascript', run));
+      run.addEventListener('click', () => runCodeBlock(pre, (codeEl ? codeEl.textContent : pre.textContent), isPy ? 'python' : 'javascript', run));
       actions.appendChild(run);
     }
     const copy = document.createElement('button'); copy.className = 'copy-btn'; copy.type = 'button'; copy.textContent = 'Copy';
