@@ -13,7 +13,7 @@
   "homepage": "https://manticthink.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Cole-Will-I-Am/MaticThink.git"
+    "url": "https://github.com/Cole-Will-I-Am/manticthink.git"
   },
   "devDependencies": {
     "wrangler": "^4.98.0"
