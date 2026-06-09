@@ -769,6 +769,7 @@ self.onmessage=async function(e){
       self.py=await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/'});
       self.py.setStdout({batched:function(s){ postMessage({type:'out',level:'log',text:s}); }});
       self.py.setStderr({batched:function(s){ postMessage({type:'out',level:'error',text:s}); }});
+      self.py.setStdin({stdin:function(){ postMessage({type:'stdin'}); return null; }});
       ready=true;
     }
     postMessage({type:'ready'});
@@ -838,14 +839,17 @@ function runCodeBlock(pre, code, lang, runBtn) {
   const body = document.createElement('div'); body.className = 'ro-body';
   panel.append(head, body);
   if (runBtn) { runBtn.disabled = true; runBtn.textContent = '▶ Running'; }
-  let any = false;
+  let any = false, neededInput = false;
+  const addLine = (cls, text) => { const d = document.createElement('div'); d.className = 'ro-line ' + cls; d.textContent = text; body.appendChild(d); };
   const onMsg = (m) => {
     if (m.type === 'status') { status.textContent = m.text; return; }
-    if (m.type === 'out') { any = true; const line = document.createElement('div'); line.className = 'ro-line ro-' + (m.level || 'log'); line.textContent = m.text; body.appendChild(line); maybeScroll(); }
+    if (m.type === 'stdin') { neededInput = true; return; }
+    if (m.type === 'out') { any = true; addLine('ro-' + (m.level || 'log'), m.text); maybeScroll(); }
   };
   const onDone = (timedOut) => {
     status.textContent = timedOut ? 'stopped (timeout)' : 'done';
-    if (!any && !timedOut) { const d = document.createElement('div'); d.className = 'ro-line ro-muted'; d.textContent = '(no output)'; body.appendChild(d); }
+    if (neededInput) addLine('ro-muted', 'Note: this program reads interactive input (input()), which the sandbox doesn’t support. Replace input() with fixed values to run it here.');
+    else if (!any && !timedOut) addLine('ro-muted', '(no output)');
     if (runBtn) { runBtn.disabled = false; runBtn.textContent = '▶ Run'; }
     maybeScroll();
   };
