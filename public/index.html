@@ -37,6 +37,7 @@
           <span class="plus">+</span> New chat
         </button>
       </div>
+      <div id="projectBar" class="project-bar"></div>
       <div id="convList" class="conv-list"></div>
       <div class="side-foot">
         <button class="ghost" id="disconnect" title="Remove key">Sign out</button>
@@ -228,6 +229,43 @@
         <div class="sp-foot set-foot">
           <button id="sbSave" class="mm-add-btn" type="button">Save scaffold</button>
           <button id="sbCancel" class="sp-link" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Project editor -->
+  <div id="projectModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="pjTitle">New project</span>
+        <button id="pjClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div class="set-section">
+          <div class="mm-label">Name</div>
+          <label class="set-field set-field-wide"><input id="pjName" type="text" maxlength="80" placeholder="My project" autocomplete="off" /></label>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Instructions</div>
+          <textarea id="pjInstr" class="set-textarea" placeholder="Custom instructions applied to every chat in this project…"></textarea>
+          <div class="sp-hint">Injected as context on every message in this project's chats.</div>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Context files <span id="pjSize" class="pj-size"></span></div>
+          <div id="pjFiles"></div>
+          <label class="pj-upload-label">Upload files<input id="pjUpload" type="file" multiple hidden /></label>
+          <div class="pj-paste">
+            <input id="pjPasteName" type="text" placeholder="filename (optional)" autocomplete="off" />
+            <textarea id="pjPaste" class="set-textarea sb-area" placeholder="…or paste text/code to add as a file"></textarea>
+            <button id="pjPasteAdd" class="mm-add-btn" type="button">Add file</button>
+          </div>
+          <div class="sp-hint">Text/code files only · keep them small (stored in your browser). Large files increase prompt size.</div>
+        </div>
+        <div class="sp-foot set-foot">
+          <button id="pjSave" class="mm-add-btn" type="button">Save project</button>
+          <button id="pjDelete" class="sp-link" type="button">Delete</button>
+          <button id="pjCancel" class="sp-link" type="button">Cancel</button>
         </div>
       </div>
     </div>

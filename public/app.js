@@ -24,6 +24,10 @@ const els = {
   sbName: $('sbName'), sbSummary: $('sbSummary'), sbRole: $('sbRole'), sbPerspective: $('sbPerspective'), sbTone: $('sbTone'),
   sbSteps: $('sbSteps'), sbMust: $('sbMust'), sbNever: $('sbNever'), sbDisc: $('sbDisc'), sbProh: $('sbProh'),
   sbPreview: $('sbPreview'), sbSave: $('sbSave'), sbCancel: $('sbCancel'),
+  projectBar: $('projectBar'), projectModal: $('projectModal'), pjTitle: $('pjTitle'), pjClose: $('pjClose'),
+  pjName: $('pjName'), pjInstr: $('pjInstr'), pjFiles: $('pjFiles'), pjSize: $('pjSize'), pjUpload: $('pjUpload'),
+  pjPaste: $('pjPaste'), pjPasteName: $('pjPasteName'), pjPasteAdd: $('pjPasteAdd'),
+  pjSave: $('pjSave'), pjDelete: $('pjDelete'), pjCancel: $('pjCancel'),
 };
 
 /* ---------- Generation settings (per-conversation, with global defaults) ---------- */
@@ -370,11 +374,121 @@ function saveBuilder() {
   closeBuilder(); openScaffoldModal();
 }
 
+/* ---------- Projects (context workspaces) ---------- */
+// A project = name + custom instructions + attached context files, plus its own
+// grouped conversations (conv.projectId). The instructions and files are injected
+// as a system message on every message in the project's chats.
+const PROJECTS_KEY = 'mt_projects';
+function loadProjects() { try { const v = JSON.parse(localStorage.getItem(PROJECTS_KEY)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function saveProjects(list) { localStorage.setItem(PROJECTS_KEY, JSON.stringify(list)); } // may throw on quota — callers handle
+function getProject(id) { return loadProjects().find((p) => p.id === id) || null; }
+function upsertProject(p) { const all = loadProjects().filter((x) => x.id !== p.id); all.unshift(p); saveProjects(all); }
+function projectOf(conv) { if (!conv || !conv.projectId) return null; const p = getProject(conv.projectId); if (!p) { conv.projectId = null; return null; } return p; }
+
+function compileProjectContext(p) {
+  const parts = [];
+  const head = '## Project: ' + p.name;
+  parts.push(p.instructions && p.instructions.trim() ? head + '\n' + p.instructions.trim() : head);
+  for (const f of (p.files || [])) parts.push('### Project file: ' + f.name + '\n```\n' + f.content + '\n```');
+  parts.push('Use the project context above when relevant to the conversation.');
+  return parts.join('\n\n');
+}
+
+function scopedList() { const l = store.list(); return activeProjectId ? l.filter((c) => c.projectId === activeProjectId) : l; }
+
+function setActiveProject(id) {
+  activeProjectId = id || null;
+  try { if (activeProjectId) localStorage.setItem('mt_active_project', activeProjectId); else localStorage.removeItem('mt_active_project'); } catch (e) {}
+  openMostRecentOrNew();   // enter the workspace scope (renders sidebar)
+}
+
+function renderProjects() {
+  const bar = els.projectBar; if (!bar) return;
+  if (activeProjectId && !getProject(activeProjectId)) activeProjectId = null;
+  const projects = loadProjects().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  bar.innerHTML = '';
+  const mkPill = (label, id) => {
+    const b = document.createElement('button'); b.className = 'proj-pill' + (activeProjectId === id ? ' active' : '');
+    b.type = 'button'; b.textContent = label; b.title = label;
+    b.addEventListener('click', () => setActiveProject(id));
+    return b;
+  };
+  bar.appendChild(mkPill('All chats', null));
+  for (const p of projects) bar.appendChild(mkPill(p.name, p.id));
+  const add = document.createElement('button'); add.className = 'proj-add'; add.type = 'button'; add.textContent = '+'; add.title = 'New project';
+  add.addEventListener('click', () => openProjectEditor(null));
+  bar.appendChild(add);
+  if (activeProjectId) {
+    const ed = document.createElement('button'); ed.className = 'proj-edit'; ed.type = 'button'; ed.textContent = 'Edit project ⚙';
+    ed.addEventListener('click', () => openProjectEditor(activeProjectId));
+    bar.appendChild(ed);
+  }
+}
+
+function deleteProject(id) {
+  for (const c of store.list()) { if (c.projectId === id) { const conv = store.load(c.id); if (conv) { conv.projectId = null; store.save(conv); } } }
+  try { saveProjects(loadProjects().filter((p) => p.id !== id)); } catch (e) {}
+  if (activeProjectId === id) { activeProjectId = null; try { localStorage.removeItem('mt_active_project'); } catch (e) {} }
+  closeProjectEditor();
+  openMostRecentOrNew();
+}
+
+/* ---------- Project editor ---------- */
+let projectEditingId = null;
+let projectDraft = { name: '', instructions: '', files: [] };
+function fileBytes(s) { try { return new Blob([s]).size; } catch (e) { return (s || '').length; } }
+function fmtBytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(2) + ' MB'; }
+
+function openProjectEditor(id) {
+  projectEditingId = id || null;
+  const p = id ? getProject(id) : null;
+  projectDraft = p
+    ? { name: p.name, instructions: p.instructions || '', files: (p.files || []).map((f) => ({ id: f.id, name: f.name, content: f.content })) }
+    : { name: '', instructions: '', files: [] };
+  els.pjTitle.textContent = id ? 'Edit project' : 'New project';
+  els.pjName.value = projectDraft.name; els.pjInstr.value = projectDraft.instructions;
+  els.pjDelete.style.display = id ? '' : 'none';
+  els.pjPaste.value = ''; els.pjPasteName.value = '';
+  renderProjectFiles();
+  els.projectModal.classList.remove('hidden');
+}
+function closeProjectEditor() { els.projectModal.classList.add('hidden'); projectEditingId = null; }
+function renderProjectFiles() {
+  els.pjFiles.innerHTML = ''; let total = 0;
+  if (!projectDraft.files.length) els.pjFiles.innerHTML = '<div class="pj-empty">No files yet.</div>';
+  for (const f of projectDraft.files) {
+    const sz = fileBytes(f.content); total += sz;
+    const row = document.createElement('div'); row.className = 'pj-file';
+    const nm = document.createElement('span'); nm.className = 'pj-file-name'; nm.textContent = f.name;
+    const szs = document.createElement('span'); szs.className = 'pj-file-size'; szs.textContent = fmtBytes(sz);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'pj-file-x'; x.textContent = '✕'; x.title = 'Remove';
+    x.addEventListener('click', () => { projectDraft.files = projectDraft.files.filter((g) => g.id !== f.id); renderProjectFiles(); });
+    row.append(nm, szs, x); els.pjFiles.appendChild(row);
+  }
+  els.pjSize.textContent = projectDraft.files.length ? '· ' + fmtBytes(total) : '';
+  els.pjSize.classList.toggle('warn', total > 512 * 1024);
+}
+function saveProject() {
+  const name = els.pjName.value.trim() || 'Untitled project';
+  const now = Date.now();
+  const existing = projectEditingId ? getProject(projectEditingId) : null;
+  const p = {
+    id: existing ? existing.id : uidS(), name, instructions: els.pjInstr.value,
+    files: projectDraft.files.map((f) => ({ id: f.id, name: f.name, content: f.content })),
+    createdAt: existing ? existing.createdAt : now, updatedAt: now,
+  };
+  try { upsertProject(p); } catch (e) { alert('Could not save — browser storage may be full. Remove some files and try again.'); return; }
+  closeProjectEditor();
+  if (existing) renderSidebar();   // edited project's context applies on next send
+  else setActiveProject(p.id);     // new project becomes the active scope
+}
+
 let apiKey = localStorage.getItem(KEY_STORE) || '';
 let current = null;              // active conversation { id, title, model, messages: [] }
 let streaming = false;
 let controller = null;
 let autoFollow = true;
+let activeProjectId = localStorage.getItem('mt_active_project') || null;  // null = All chats
 
 const SUGGESTIONS = [
   'Explain quantum entanglement simply',
@@ -490,7 +604,7 @@ const store = {
     conv.updatedAt = Date.now();
     this._set(this.body(conv.id), conv);
     const idx = this.list().filter((c) => c.id !== conv.id);
-    idx.unshift({ id: conv.id, title: conv.title, model: conv.model, updatedAt: conv.updatedAt });
+    idx.unshift({ id: conv.id, title: conv.title, model: conv.model, updatedAt: conv.updatedAt, projectId: conv.projectId || null });
     idx.sort((a, b) => b.updatedAt - a.updatedAt);
     this._set(this.INDEX, idx);
   },
@@ -620,11 +734,15 @@ function disconnect() {
   current = null; els.keyInput.value = '';
   showApp(false);  // conversations are kept in storage
 }
-function enterApp() { showApp(true); openMostRecentOrNew(); renderSidebar(); }
+function enterApp() {
+  showApp(true);
+  if (activeProjectId && !getProject(activeProjectId)) activeProjectId = null;
+  openMostRecentOrNew(); renderSidebar();
+}
 
 /* ---------- Conversations ---------- */
 function newConversation() {
-  current = { id: uid(), title: 'New chat', model: els.model.value, messages: [], updatedAt: Date.now() };
+  current = { id: uid(), title: 'New chat', model: els.model.value, messages: [], updatedAt: Date.now(), projectId: activeProjectId || null };
   store.setActive(current.id);
   renderConversation(); renderSidebar();
   els.input.focus();
@@ -641,7 +759,7 @@ function openConversation(id) {
   renderConversation(); renderSidebar();
 }
 function openMostRecentOrNew() {
-  const list = store.list();
+  const list = scopedList();
   if (list.length) openConversation(list[0].id); else newConversation();
 }
 function deleteConversation(id) {
@@ -743,7 +861,8 @@ function renderConversation() {
 }
 
 function renderSidebar() {
-  const list = store.list();
+  renderProjects();
+  const list = scopedList();
   els.convList.innerHTML = '';
   if (!list.length) { els.convList.innerHTML = '<div class="conv-empty">No conversations yet</div>'; return; }
   for (const c of list) {
@@ -782,6 +901,8 @@ async function streamAssistant() {
   let acc = '', accThink = '', stats = null, firstTok = false, sawContent = false, failed = false;
   try {
     const reqMsgs = [];
+    const proj = projectOf(current);
+    if (proj) reqMsgs.push({ role: 'system', content: compileProjectContext(proj) });
     const scaf = activeScaffold();
     if (scaf) { reqMsgs.push({ role: 'system', content: compileScaffold(scaf) }); touchScaffold(scaf.id); }
     if (visualsOn()) reqMsgs.push({ role: 'system', content: VISUALS_HINT });
@@ -922,6 +1043,26 @@ els.scaffoldBuilder.addEventListener('click', (e) => { if (e.target === els.scaf
 els.sbSave.addEventListener('click', saveBuilder);
 ['sbName', 'sbSummary', 'sbRole', 'sbPerspective', 'sbTone', 'sbSteps', 'sbMust', 'sbNever', 'sbDisc', 'sbProh']
   .forEach((id) => els[id].addEventListener('input', updateBuilderPreview));
+
+els.pjClose.addEventListener('click', closeProjectEditor);
+els.pjCancel.addEventListener('click', closeProjectEditor);
+els.projectModal.addEventListener('click', (e) => { if (e.target === els.projectModal) closeProjectEditor(); });
+els.pjSave.addEventListener('click', saveProject);
+els.pjDelete.addEventListener('click', () => { if (projectEditingId && confirm('Delete this project? Its chats are kept and moved to All chats.')) deleteProject(projectEditingId); });
+els.pjUpload.addEventListener('change', async () => {
+  for (const file of [...els.pjUpload.files]) {
+    if (file.size > 200 * 1024) { alert('“' + file.name + '” is larger than 200 KB and was skipped.'); continue; }
+    let text = ''; try { text = await file.text(); } catch (e) { continue; }
+    projectDraft.files.push({ id: uidS(), name: file.name, content: text });
+  }
+  els.pjUpload.value = ''; renderProjectFiles();
+});
+els.pjPasteAdd.addEventListener('click', () => {
+  const content = els.pjPaste.value; if (!content.trim()) return;
+  const name = els.pjPasteName.value.trim() || ('note-' + (projectDraft.files.length + 1) + '.txt');
+  projectDraft.files.push({ id: uidS(), name, content });
+  els.pjPaste.value = ''; els.pjPasteName.value = ''; renderProjectFiles();
+});
 
 /* ---------- Boot ---------- */
 (async function boot() {

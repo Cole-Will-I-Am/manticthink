@@ -96,6 +96,33 @@ body.drawer-open #scrim { opacity: 1; pointer-events: auto; }
 }
 .side-new:hover { background: rgba(97,121,255,0.18); }
 .side-new .plus { font-size: 16px; line-height: 1; }
+/* projects */
+.project-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 0.5px solid var(--border); align-items: center; }
+.proj-pill { background: var(--surface); border: 0.5px solid var(--border-light); color: var(--text-secondary); border-radius: 999px; padding: 5px 11px; font-size: 11.5px; cursor: pointer; font-family: var(--font); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-pill:hover { color: var(--text-primary); }
+.proj-pill.active { background: var(--accent-soft); border-color: rgba(97,121,255,0.35); color: var(--text-primary); }
+.proj-add { width: 26px; height: 26px; border-radius: 999px; border: 0.5px dashed var(--border-light); background: none; color: var(--text-secondary); cursor: pointer; font-size: 15px; line-height: 1; }
+.proj-add:hover { color: var(--accent); border-color: var(--accent); }
+.proj-edit { margin-left: auto; background: none; border: none; color: var(--accent); font-size: 11px; cursor: pointer; font-family: var(--font); }
+.proj-edit:hover { text-decoration: underline; }
+
+/* project editor */
+.pj-size { font-size: 11px; color: var(--text-tertiary); letter-spacing: 0.02em; }
+.pj-size.warn { color: var(--danger); }
+.pj-file { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0.5px solid var(--border); border-radius: 9px; margin-bottom: 6px; }
+.pj-file-name { flex: 1; font-family: var(--mono); font-size: 12.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-file-size { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+.pj-file-x { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 12px; flex-shrink: 0; }
+.pj-file-x:hover { color: var(--danger); }
+.pj-empty { font-size: 12px; color: var(--text-tertiary); margin-bottom: 10px; }
+.pj-upload-label { display: inline-block; background: var(--accent-soft); color: var(--accent); border-radius: 9px; padding: 8px 14px; font-size: 12px; cursor: pointer; margin: 4px 0 12px; }
+.pj-upload-label:hover { background: rgba(97,121,255,0.18); }
+.pj-paste { display: flex; flex-direction: column; gap: 8px; }
+.pj-paste input { background: var(--surface); color: var(--text-primary); border: 0.5px solid var(--border-light); border-radius: 10px; padding: 9px 11px; font-family: var(--font); font-size: 13px; outline: none; }
+.pj-paste input:focus { border-color: rgba(97,121,255,0.4); }
+.pj-paste .mm-add-btn { align-self: flex-start; }
+#pjDelete { color: var(--danger); }
+
 .conv-list { flex: 1; overflow-y: auto; padding: 6px 10px; }
 .conv-row {
   position: relative; padding: 10px 12px; border-radius: 10px; cursor: pointer;
