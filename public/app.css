@@ -80,6 +80,9 @@ body::before {
 .gate-beta { margin-top: 8px; font-size: 11px; }
 .gate-beta a { color: var(--accent); text-decoration: none; }
 .gate-beta a:hover { text-decoration: underline; }
+.gate-legal { margin-top: 8px; font-size: 10.5px; }
+.gate-legal a { color: var(--text-tertiary); text-decoration: none; }
+.gate-legal a:hover { color: var(--accent); text-decoration: underline; }
 .side-beta { margin-top: 6px; text-align: center; font-size: 10.5px; }
 .side-beta a { color: var(--accent); text-decoration: none; }
 .side-beta a:hover { text-decoration: underline; }
