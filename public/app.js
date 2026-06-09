@@ -25,6 +25,11 @@ const els = {
   sbName: $('sbName'), sbSummary: $('sbSummary'), sbRole: $('sbRole'), sbPerspective: $('sbPerspective'), sbTone: $('sbTone'),
   sbSteps: $('sbSteps'), sbMust: $('sbMust'), sbNever: $('sbNever'), sbDisc: $('sbDisc'), sbProh: $('sbProh'),
   sbPreview: $('sbPreview'), sbSave: $('sbSave'), sbCancel: $('sbCancel'),
+  githubBtn: $('githubBtn'), githubModal: $('githubModal'), ghClose: $('ghClose'),
+  ghGate: $('ghGate'), ghBrowser: $('ghBrowser'), ghToken: $('ghToken'), ghGateErr: $('ghGateErr'), ghConnect: $('ghConnect'),
+  ghLogin: $('ghLogin'), ghDisconnect: $('ghDisconnect'), ghRepoSearch: $('ghRepoSearch'), ghRepoGo: $('ghRepoGo'), ghRepos: $('ghRepos'),
+  ghRepoView: $('ghRepoView'), ghRepoName: $('ghRepoName'), ghBranch: $('ghBranch'), ghFileSearch: $('ghFileSearch'),
+  ghFiles: $('ghFiles'), ghSelCount: $('ghSelCount'), ghAttach: $('ghAttach'),
   projectBar: $('projectBar'), projectModal: $('projectModal'), pjTitle: $('pjTitle'), pjClose: $('pjClose'),
   pjName: $('pjName'), pjInstr: $('pjInstr'), pjFiles: $('pjFiles'), pjSize: $('pjSize'), pjUpload: $('pjUpload'),
   pjPaste: $('pjPaste'), pjPasteName: $('pjPasteName'), pjPasteAdd: $('pjPasteAdd'),
@@ -482,6 +487,148 @@ function saveProject() {
   closeProjectEditor();
   if (existing) renderSidebar();   // edited project's context applies on next send
   else setActiveProject(p.id);     // new project becomes the active scope
+}
+
+/* ---------- GitHub (BYO token, read-only → context) ---------- */
+// Pure client-side: GitHub's REST API is CORS-open, so the browser talks to it
+// directly with the user's token (stored locally, like the Ollama key). Selected
+// files are fetched, decoded, and added as message attachments.
+const GH = {
+  token: localStorage.getItem('mt_github_token') || '',
+  login: localStorage.getItem('mt_github_login') || '',
+  repo: null, branch: '', tree: [], repos: [], selected: new Set(),
+};
+function ghHeaders() { return { Authorization: 'token ' + GH.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }; }
+async function ghApi(path) {
+  const r = await fetch('https://api.github.com' + path, { headers: ghHeaders() });
+  if (!r.ok) { const e = new Error('GitHub ' + r.status); e.status = r.status; try { e.detail = (await r.json()).message; } catch (_) {} throw e; }
+  return r.json();
+}
+function ghIsTextPath(p) {
+  const base = p.split('/').pop();
+  return ATT_TEXT_RE.test(base) || /^(Dockerfile|Makefile|LICENSE|README|Procfile|\.gitignore|\.env\.example|\.npmrc|\.editorconfig)$/i.test(base);
+}
+function ghDecodeBase64(b64) {
+  try { const bin = atob((b64 || '').replace(/\s/g, '')); const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0)); return new TextDecoder('utf-8', { fatal: false }).decode(bytes); }
+  catch (e) { return ''; }
+}
+function updateGithubBtn() { if (els.githubBtn) els.githubBtn.classList.toggle('on', !!GH.token); }
+
+function openGithubModal() { els.githubModal.classList.remove('hidden'); if (GH.token) showGhBrowser(); else showGhGate(); }
+function closeGithubModal() { els.githubModal.classList.add('hidden'); }
+function showGhGate() { els.ghGate.classList.remove('hidden'); els.ghBrowser.classList.add('hidden'); els.ghToken.value = ''; els.ghGateErr.textContent = ''; setTimeout(() => els.ghToken.focus(), 40); }
+function showGhBrowser() {
+  els.ghGate.classList.add('hidden'); els.ghBrowser.classList.remove('hidden');
+  els.ghLogin.textContent = '@' + GH.login;
+  els.ghRepoView.classList.add('hidden'); els.ghRepoSearch.value = '';
+  loadGhRepos();
+}
+async function connectGithub() {
+  const tok = els.ghToken.value.trim();
+  if (!tok) { els.ghGateErr.textContent = 'Enter a token.'; return; }
+  els.ghConnect.disabled = true; els.ghConnect.textContent = 'Connecting…'; GH.token = tok;
+  try {
+    const me = await ghApi('/user');
+    GH.login = me.login;
+    try { localStorage.setItem('mt_github_token', tok); localStorage.setItem('mt_github_login', me.login); } catch (e) {}
+    updateGithubBtn(); showGhBrowser();
+  } catch (e) { GH.token = ''; els.ghGateErr.textContent = e.status === 401 ? 'Token rejected.' : ('Could not connect' + (e.detail ? ': ' + e.detail : '.')); }
+  finally { els.ghConnect.disabled = false; els.ghConnect.textContent = 'Connect'; }
+}
+function disconnectGithub() {
+  GH.token = ''; GH.login = ''; GH.repo = null; GH.tree = []; GH.selected.clear();
+  try { localStorage.removeItem('mt_github_token'); localStorage.removeItem('mt_github_login'); } catch (e) {}
+  updateGithubBtn(); showGhGate();
+}
+async function loadGhRepos() {
+  els.ghRepos.innerHTML = '<div class="gh-loading">Loading repos…</div>';
+  try {
+    const repos = await ghApi('/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member');
+    GH.repos = repos.map((r) => ({ full: r.full_name, owner: r.owner.login, name: r.name, private: r.private }));
+    renderGhRepos();
+  } catch (e) { els.ghRepos.innerHTML = '<div class="gh-loading">Could not load repos' + (e.detail ? ': ' + escapeHtml(e.detail) : '') + '</div>'; }
+}
+function renderGhRepos() {
+  const q = (els.ghRepoSearch.value || '').trim().toLowerCase();
+  const list = GH.repos.filter((r) => !q || r.full.toLowerCase().includes(q)).slice(0, 60);
+  els.ghRepos.innerHTML = '';
+  if (!list.length) { els.ghRepos.innerHTML = '<div class="gh-loading">No matching repos.</div>'; return; }
+  for (const r of list) {
+    const row = document.createElement('button'); row.type = 'button'; row.className = 'gh-repo-row';
+    const full = document.createElement('span'); full.className = 'gh-repo-full'; full.textContent = r.full;
+    row.appendChild(full);
+    if (r.private) { const b = document.createElement('span'); b.className = 'gh-badge'; b.textContent = 'private'; row.appendChild(b); }
+    row.addEventListener('click', () => openGhRepo(r.owner, r.name));
+    els.ghRepos.appendChild(row);
+  }
+}
+function ghRepoGoManual() {
+  const m = els.ghRepoSearch.value.trim().match(/^([\w.-]+)\/([\w.-]+)$/);
+  if (m) openGhRepo(m[1], m[2]); else renderGhRepos();
+}
+async function openGhRepo(owner, name) {
+  els.ghRepoView.classList.remove('hidden');
+  els.ghRepoName.textContent = owner + '/' + name;
+  els.ghFiles.innerHTML = '<div class="gh-loading">Loading…</div>';
+  GH.selected.clear(); updateGhSel();
+  try {
+    const repo = await ghApi('/repos/' + owner + '/' + name);
+    GH.repo = { owner, name };
+    let branches = []; try { branches = await ghApi('/repos/' + owner + '/' + name + '/branches?per_page=100'); } catch (e) {}
+    els.ghBranch.innerHTML = '';
+    const names = branches.length ? branches.map((b) => b.name) : [repo.default_branch];
+    for (const bn of names) { const o = document.createElement('option'); o.value = bn; o.textContent = bn; els.ghBranch.appendChild(o); }
+    els.ghBranch.value = repo.default_branch;
+    await loadGhTree(repo.default_branch);
+  } catch (e) { els.ghFiles.innerHTML = '<div class="gh-loading">' + (e.status === 404 ? 'Repo not found or no access.' : 'Error' + (e.detail ? ': ' + escapeHtml(e.detail) : '')) + '</div>'; }
+}
+async function loadGhTree(branch) {
+  GH.branch = branch; GH.selected.clear(); updateGhSel();
+  els.ghFiles.innerHTML = '<div class="gh-loading">Loading files…</div>';
+  try {
+    const t = await ghApi('/repos/' + GH.repo.owner + '/' + GH.repo.name + '/git/trees/' + encodeURIComponent(branch) + '?recursive=1');
+    GH.tree = (t.tree || []).filter((n) => n.type === 'blob' && ghIsTextPath(n.path));
+    renderGhFiles(t.truncated);
+  } catch (e) { els.ghFiles.innerHTML = '<div class="gh-loading">Could not load files' + (e.detail ? ': ' + escapeHtml(e.detail) : '') + '</div>'; }
+}
+function renderGhFiles(truncated) {
+  const q = (els.ghFileSearch.value || '').trim().toLowerCase();
+  const list = GH.tree.filter((n) => !q || n.path.toLowerCase().includes(q)).slice(0, 600);
+  els.ghFiles.innerHTML = '';
+  if (!GH.tree.length) { els.ghFiles.innerHTML = '<div class="gh-loading">No text files found.</div>'; return; }
+  if (!list.length) { els.ghFiles.innerHTML = '<div class="gh-loading">No matching files.</div>'; return; }
+  for (const n of list) {
+    const row = document.createElement('label'); row.className = 'gh-file';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = GH.selected.has(n.path);
+    cb.addEventListener('change', () => { if (cb.checked) GH.selected.add(n.path); else GH.selected.delete(n.path); updateGhSel(); });
+    const path = document.createElement('span'); path.className = 'gh-file-path'; path.textContent = n.path;
+    const sz = document.createElement('span'); sz.className = 'gh-file-size'; sz.textContent = fmtBytes(n.size || 0);
+    row.append(cb, path, sz); els.ghFiles.appendChild(row);
+  }
+  if (truncated) { const w = document.createElement('div'); w.className = 'gh-loading'; w.textContent = 'Large repo — file list was truncated by GitHub. Use the filter to find files.'; els.ghFiles.appendChild(w); }
+}
+function updateGhSel() { const n = GH.selected.size; els.ghSelCount.textContent = n + ' selected'; els.ghAttach.disabled = !n; }
+async function ghAttachSelected() {
+  const paths = [...GH.selected]; if (!paths.length) return;
+  if (paths.length > 40) { alert('Select 40 files or fewer.'); return; }
+  els.ghAttach.disabled = true; els.ghAttach.textContent = 'Fetching…';
+  const byPath = Object.fromEntries(GH.tree.map((n) => [n.path, n]));
+  let added = 0;
+  for (const p of paths) {
+    const node = byPath[p]; if (!node) continue;
+    try {
+      const blob = await ghApi('/repos/' + GH.repo.owner + '/' + GH.repo.name + '/git/blobs/' + node.sha);
+      let text = ghDecodeBase64(blob.content || '');
+      if (!text) continue;
+      if (text.length > ATT_TEXT_CAP) text = text.slice(0, ATT_TEXT_CAP);
+      pendingAttachments.push({ id: uidS(), name: GH.repo.owner + '/' + GH.repo.name + ':' + p, size: node.size || text.length, text, status: 'ready', note: 'from GitHub' });
+      added++;
+    } catch (e) { /* skip unreadable file */ }
+  }
+  renderAttachments();
+  els.ghAttach.disabled = false; els.ghAttach.textContent = 'Attach to chat';
+  closeGithubModal();
+  if (added) els.input.focus();
 }
 
 let apiKey = localStorage.getItem(KEY_STORE) || '';
@@ -1092,6 +1239,20 @@ els.model.addEventListener('change', () => { if (current) { current.model = els.
 els.send.addEventListener('click', () => { if (streaming) { if (controller) controller.abort(); } else send(); });
 els.attachBtn.addEventListener('click', () => els.fileInput.click());
 els.fileInput.addEventListener('change', () => { addFiles(els.fileInput.files); els.fileInput.value = ''; });
+
+els.githubBtn.addEventListener('click', (e) => { e.stopPropagation(); openGithubModal(); });
+els.ghClose.addEventListener('click', closeGithubModal);
+els.githubModal.addEventListener('click', (e) => { if (e.target === els.githubModal) closeGithubModal(); });
+els.ghConnect.addEventListener('click', connectGithub);
+els.ghToken.addEventListener('keydown', (e) => { if (e.key === 'Enter') connectGithub(); });
+els.ghDisconnect.addEventListener('click', disconnectGithub);
+els.ghRepoSearch.addEventListener('input', renderGhRepos);
+els.ghRepoGo.addEventListener('click', ghRepoGoManual);
+els.ghRepoSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') ghRepoGoManual(); });
+els.ghBranch.addEventListener('change', () => loadGhTree(els.ghBranch.value));
+els.ghFileSearch.addEventListener('input', () => renderGhFiles(false));
+els.ghAttach.addEventListener('click', ghAttachSelected);
+updateGithubBtn();
 els.input.addEventListener('input', autosize);
 els.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!streaming) send(); } });
 els.main.addEventListener('scroll', () => { autoFollow = nearBottom(); els.scrollBtn.classList.toggle('hidden', autoFollow); });

@@ -53,6 +53,7 @@
         </div>
         <span class="spacer"></span>
         <select id="model" title="Model"></select>
+        <button id="githubBtn" class="icon-btn" title="GitHub" aria-label="GitHub"><svg viewBox="0 0 16 16" width="17" height="17" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></button>
         <button id="scaffoldBtn" class="icon-btn" title="Reasoning scaffolds" aria-label="Scaffolds">⌗</button>
         <button id="settingsBtn" class="icon-btn" title="Generation settings" aria-label="Settings">⚙</button>
       </header>
@@ -232,6 +233,49 @@
         <div class="sp-foot set-foot">
           <button id="sbSave" class="mm-add-btn" type="button">Save scaffold</button>
           <button id="sbCancel" class="sp-link" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GitHub: connect + browse repos/files -->
+  <div id="githubModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>GitHub</span>
+        <button id="ghClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div id="ghGate" class="gh-gate">
+          <div class="mm-label">Connect a token</div>
+          <input id="ghToken" type="password" class="mm-search" placeholder="Paste a GitHub token (read-only Contents)" autocomplete="off" spellcheck="false" />
+          <div id="ghGateErr" class="gate-err"></div>
+          <button id="ghConnect" class="mm-add-btn" type="button">Connect</button>
+          <div class="sp-hint">Stored only in this browser, sent directly to GitHub — never to our servers. Create a
+            <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with read-only <b>Contents</b> on the repos you want.</div>
+        </div>
+        <div id="ghBrowser" class="gh-browser hidden">
+          <div class="gh-acct">Connected as <b id="ghLogin"></b> <button id="ghDisconnect" class="sp-link" type="button">Disconnect</button></div>
+          <div class="mm-section">
+            <div class="mm-label">Repository</div>
+            <div class="mm-add">
+              <input id="ghRepoSearch" class="mm-search" placeholder="Search your repos, or type owner/repo…" autocomplete="off" />
+              <button id="ghRepoGo" class="mm-add-btn" type="button">Open</button>
+            </div>
+            <div id="ghRepos" class="gh-list"></div>
+          </div>
+          <div id="ghRepoView" class="hidden">
+            <div class="gh-repo-head">
+              <span id="ghRepoName" class="gh-repo-name"></span>
+              <select id="ghBranch" class="gh-branch" title="Branch"></select>
+            </div>
+            <input id="ghFileSearch" class="mm-search" placeholder="Filter files…" autocomplete="off" />
+            <div id="ghFiles" class="gh-files"></div>
+            <div class="gh-foot">
+              <span id="ghSelCount" class="gh-sel">0 selected</span>
+              <button id="ghAttach" class="mm-add-btn" type="button" disabled>Attach to chat</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -169,6 +169,34 @@ header .wordmark { height: 15px; }
   font-size: 18px; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center;
 }
 .icon-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+.icon-btn svg { display: block; }
+.icon-btn.on { color: var(--accent); }
+
+/* github */
+.gh-gate { display: flex; flex-direction: column; gap: 12px; }
+.gh-gate .mm-search { margin-bottom: 0; }
+.gh-gate .gate-err { text-align: left; }
+.gh-acct { font-size: 12px; color: var(--text-secondary); margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+.gh-acct b { color: var(--text-primary); }
+.gh-list { max-height: 200px; overflow-y: auto; border: 0.5px solid var(--border); border-radius: 12px; margin-top: 10px; }
+.gh-repo-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: none; border-bottom: 0.5px solid var(--border); padding: 9px 12px; cursor: pointer; font-family: var(--font); color: var(--text-primary); }
+.gh-repo-row:last-child { border-bottom: none; }
+.gh-repo-row:hover { background: rgba(255,255,255,0.04); }
+.gh-repo-full { flex: 1; font-size: 12.5px; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-badge { font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); border: 0.5px solid var(--border-light); border-radius: 999px; padding: 2px 7px; }
+.gh-loading { padding: 14px; text-align: center; font-size: 12px; color: var(--text-tertiary); }
+.gh-repo-head { display: flex; align-items: center; gap: 10px; margin: 18px 0 10px; }
+.gh-repo-name { flex: 1; font-family: var(--mono); font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-branch { appearance: none; background: var(--bg-secondary); color: var(--text-secondary); border: 0.5px solid var(--border-light); border-radius: 999px; padding: 6px 12px; font-family: var(--mono); font-size: 11px; cursor: pointer; max-width: 45%; }
+.gh-files { max-height: 280px; overflow-y: auto; border: 0.5px solid var(--border); border-radius: 12px; margin-top: 10px; }
+.gh-file { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-bottom: 0.5px solid var(--border); cursor: pointer; }
+.gh-file:last-child { border-bottom: none; }
+.gh-file:hover { background: rgba(255,255,255,0.03); }
+.gh-file input { width: 15px; height: 15px; accent-color: var(--accent); flex-shrink: 0; }
+.gh-file-path { flex: 1; font-family: var(--mono); font-size: 12px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-file-size { font-size: 10.5px; color: var(--text-tertiary); flex-shrink: 0; }
+.gh-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.gh-sel { font-size: 12px; color: var(--text-secondary); }
 .drawer-only { display: none; }
 select#model {
   appearance: none; background: var(--bg-secondary); color: var(--text-secondary);
