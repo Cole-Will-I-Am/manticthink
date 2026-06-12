@@ -279,7 +279,7 @@ const SCAFFOLD_TEMPLATES = [
 ];
 
 function loadScaffolds() { try { const v = JSON.parse(localStorage.getItem(SCAFFOLDS_KEY)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-function saveScaffolds(list) { try { localStorage.setItem(SCAFFOLDS_KEY, JSON.stringify(list)); } catch (e) {} }
+function saveScaffolds(list) { try { localStorage.setItem(SCAFFOLDS_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
 function getScaffold(id) { return loadScaffolds().find((s) => s.id === id) || null; }
 function uidS() { return (crypto && crypto.randomUUID) ? crypto.randomUUID() : 's' + Date.now() + Math.random().toString(16).slice(2); }
 function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -295,7 +295,7 @@ function draftToScaffold(d, existing) {
     createdAt: existing ? existing.createdAt : now, updatedAt: now, lastUsedAt: existing ? existing.lastUsedAt : null,
   };
 }
-function upsertScaffold(sc) { const all = loadScaffolds().filter((s) => s.id !== sc.id); all.unshift(sc); saveScaffolds(all); }
+function upsertScaffold(sc) { const all = loadScaffolds().filter((s) => s.id !== sc.id); all.unshift(sc); return saveScaffolds(all); }
 function deleteScaffold(id) { saveScaffolds(loadScaffolds().filter((s) => s.id !== id)); if (current && current.scaffoldId === id) clearScaffold(); }
 function touchScaffold(id) { const all = loadScaffolds(); const s = all.find((x) => x.id === id); if (s) { s.lastUsedAt = Date.now(); saveScaffolds(all); } }
 
@@ -417,7 +417,10 @@ function saveBuilder() {
   }
   const existing = builderEditingId ? getScaffold(builderEditingId) : null;
   const sc = draftToScaffold(d, existing);
-  upsertScaffold(sc);
+  if (!upsertScaffold(sc)) {
+    alert('Couldn’t save the scaffold — this browser’s storage is full. Delete some conversations or projects and try again.');
+    return;   // keep the builder open so the work isn't lost
+  }
   if (current && current.scaffoldId === sc.id) { current.scaffoldName = sc.name; if (current.messages.length) store.save(current); renderScaffoldBar(); }
   closeBuilder(); openScaffoldModal();
 }
@@ -676,16 +679,17 @@ async function ghAttachSelected() {
 /* ---------- Saved code snippets ---------- */
 const SNIPPETS_KEY = 'mt_snippets';
 function loadSnippets() { try { const v = JSON.parse(localStorage.getItem(SNIPPETS_KEY)); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
-function saveSnippetsList(list) { try { localStorage.setItem(SNIPPETS_KEY, JSON.stringify(list)); } catch (e) {} }
+function saveSnippetsList(list) { try { localStorage.setItem(SNIPPETS_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
 function saveSnippet(code, language) {
   code = (code || '').replace(/\s+$/, '');
-  if (!code.trim()) return;
+  if (!code.trim()) return false;
   const all = loadSnippets();
-  if (all.some((s) => s.code === code)) return;   // already saved
+  if (all.some((s) => s.code === code)) return true;   // already saved
   const title = (code.split('\n').find((l) => l.trim()) || 'snippet').trim().slice(0, 60);
   all.unshift({ id: uidS(), title, language: language || '', code, createdAt: Date.now() });
-  saveSnippetsList(all);
+  if (!saveSnippetsList(all)) return false;
   if (els.snippetsBtn) els.snippetsBtn.classList.add('on');
+  return true;
 }
 function deleteSnippet(id) { saveSnippetsList(loadSnippets().filter((s) => s.id !== id)); renderSnippets(); }
 function renameSnippet(id) {
@@ -1023,9 +1027,9 @@ function renderAssistantHTML(bubble, text) {
     }
     const save = document.createElement('button'); save.className = 'save-btn'; save.type = 'button'; save.textContent = 'Save';
     save.addEventListener('click', () => {
-      saveSnippet(codeEl ? codeEl.textContent : pre.textContent, lang);
-      save.textContent = 'Saved'; save.classList.add('ok');
-      setTimeout(() => { save.textContent = 'Save'; save.classList.remove('ok'); }, 1200);
+      const ok = saveSnippet(codeEl ? codeEl.textContent : pre.textContent, lang);
+      save.textContent = ok ? 'Saved' : 'Storage full'; save.classList.toggle('ok', ok);
+      setTimeout(() => { save.textContent = 'Save'; save.classList.remove('ok'); }, ok ? 1200 : 2500);
     });
     actions.appendChild(save);
     const copy = document.createElement('button'); copy.className = 'copy-btn'; copy.type = 'button'; copy.textContent = 'Copy';
@@ -1094,17 +1098,23 @@ function setUserModels(list) {
   return uniq;
 }
 function populateModelSelect() {
-  const list = getUserModels() || ['default'];
+  // Empty value → the Worker substitutes its DEFAULT_MODEL; the literal string
+  // "default" would be sent upstream verbatim and fail.
+  const list = getUserModels() || [''];
   const cur = els.model.value;
   els.model.innerHTML = '';
-  for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m; els.model.appendChild(o); }
+  for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m || 'default'; els.model.appendChild(o); }
   if (list.includes(cur)) els.model.value = cur;
 }
 async function loadModels() {
   if (localMode) {
-    // Refresh from the live local instance so the list always matches what's
-    // actually pulled; fall back to the cached list if it's unreachable.
-    try { const names = await probeLocal(); if (names.length) setUserModels(names); } catch (e) {}
+    // Refresh from the live local instance, merged with the stored list so
+    // manually added names survive reloads; fall back to the cached list if
+    // it's unreachable.
+    try {
+      const names = await probeLocal();
+      if (names.length) setUserModels([...(getUserModels() || []), ...names]);
+    } catch (e) {}
     populateModelSelect();
     return;
   }
@@ -1181,16 +1191,18 @@ async function connect() {
   els.gateErr.textContent = '';
   if (!key) { els.gateErr.textContent = 'Enter your Ollama API key.'; return; }
   els.connect.disabled = true; els.connect.textContent = 'Connecting…';
+  if (els.connectLocal) els.connectLocal.disabled = true;   // one connect path at a time
   try {
     const res = await validateKey(key);
     if (res.ok) { apiKey = key; writeKey(key, !els.rememberKey || els.rememberKey.checked); await loadModels(); enterApp(); }
     else els.gateErr.textContent = res.error || 'That key was rejected.';
   } catch (e) { els.gateErr.textContent = 'Network error. Try again.'; }
-  finally { els.connect.disabled = false; els.connect.textContent = 'Connect'; }
+  finally { els.connect.disabled = false; els.connect.textContent = 'Connect'; if (els.connectLocal) els.connectLocal.disabled = false; }
 }
 async function connectLocal() {
   els.gateErr.textContent = '';
   els.connectLocal.disabled = true; els.connectLocal.textContent = 'Connecting…';
+  els.connect.disabled = true;   // one connect path at a time
   try {
     const names = await probeLocal();
     if (!names.length) {
@@ -1205,12 +1217,13 @@ async function connectLocal() {
   } catch (e) {
     els.localHint.classList.remove('hidden');
     els.gateErr.textContent = 'Couldn’t reach Ollama at ' + localBase() + ' — see the steps below.';
-  } finally { els.connectLocal.disabled = false; els.connectLocal.textContent = 'Use local Ollama'; }
+  } finally { els.connectLocal.disabled = false; els.connectLocal.textContent = 'Use local Ollama'; els.connect.disabled = false; }
 }
 function updateModeBadge() {
   if (els.modeBadge) els.modeBadge.classList.toggle('hidden', !localMode);
 }
 function disconnect() {
+  if (controller) controller.abort();   // stop any in-flight stream
   if (localMode) setLocalMode(false);
   apiKey = ''; clearKey();
   current = null; els.keyInput.value = '';
@@ -1238,11 +1251,22 @@ function openConversation(id) {
     conv.params = conv.params || {}; conv.params.temperature = conv.temperature;
   }
   current = conv; store.setActive(id);
-  if (conv.model && [...els.model.options].some((o) => o.value === conv.model)) els.model.value = conv.model;
+  if (conv.model) {
+    // Keep the conversation on its own model even if it's gone from the list
+    // (e.g. created in local mode, opened in cloud mode) — silently
+    // substituting another model is worse than an explicit upstream error.
+    if (![...els.model.options].some((o) => o.value === conv.model)) {
+      const o = document.createElement('option'); o.value = conv.model; o.textContent = conv.model;
+      els.model.appendChild(o);
+    }
+    els.model.value = conv.model;
+  }
   renderConversation(); renderSidebar();
 }
 function openMostRecentOrNew() {
   const list = scopedList();
+  const activeId = store.getActive();
+  if (activeId && list.some((c) => c.id === activeId)) { openConversation(activeId); return; }
   if (list.length) openConversation(list[0].id); else newConversation();
 }
 function deleteConversation(id) {
@@ -1489,6 +1513,10 @@ function setStreaming(on) {
 }
 
 async function streamAssistant() {
+  // Pin the conversation this stream belongs to — the user can switch, delete,
+  // or sign out mid-stream, and the reply must land in THIS conversation (or
+  // nowhere), never whatever `current` happens to be at completion time.
+  const conv = current;
   const a = buildAssistantNode();
   controller = new AbortController();
   setStreaming(true);
@@ -1506,7 +1534,7 @@ async function streamAssistant() {
   const toolsActive = toolSchemas.length > 0;
   const convo = [...sysMsgs, ...expandConversation()];
   const toolRounds = [];
-  let acc = '', accThink = '', stats = null, firstTok = false, sawContent = false, failed = false;
+  let acc = '', accThink = '', stats = null, firstTok = false, sawContent = false, failed = false, toolLimitHit = false;
 
   try {
     for (let iter = 0; iter < 8; iter++) {
@@ -1547,10 +1575,17 @@ async function streamAssistant() {
           if (obj.done) stats = { eval_count: obj.eval_count, eval_duration: obj.eval_duration };
         }
       }
+      // Flush a final line that arrived without a trailing newline (stats live
+      // on the done:true chunk).
+      buf += dec.decode();
+      const tail = buf.trim();
+      if (tail) { try { const obj = JSON.parse(tail); if (obj.done) stats = { eval_count: obj.eval_count, eval_duration: obj.eval_duration }; } catch (e) {} }
       if (toolsActive && toolCalls.length) {
         a.clearTyping();
         convo.push({ role: 'assistant', content: turnContent, tool_calls: toolCalls });
         for (const tc of toolCalls) {
+          // Stop must work between tool runs too, not just on the fetch.
+          if (controller.signal.aborted) { const err = new Error('aborted'); err.name = 'AbortError'; throw err; }
           const name = tc.function && tc.function.name;
           let args = tc.function && tc.function.arguments;
           if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = {}; } }
@@ -1564,6 +1599,8 @@ async function streamAssistant() {
           toolRounds.push({ name, args, result });
           convo.push({ role: 'tool', content: result });
         }
+        if (controller.signal.aborted) { const err = new Error('aborted'); err.name = 'AbortError'; throw err; }
+        if (iter === 7) toolLimitHit = true;   // loop is about to end with unanswered tool results
         continue;   // re-request with tool results
       }
       break;        // no tool calls → final answer
@@ -1574,8 +1611,13 @@ async function streamAssistant() {
 
   setStreaming(false); controller = null;
   a.clearTyping(); a.bubble.classList.remove('cursor');
+  if (toolLimitHit && !failed) showErr('Tool-call limit reached (8 rounds) — the reply may be incomplete.');
 
-  if (failed && !acc && !accThink && !toolRounds.length) { a.wrap.remove(); return; }
+  if (failed && !acc && !accThink && !toolRounds.length) {
+    a.wrap.remove();
+    // The user's message was already persisted by send(); nothing else to do.
+    return;
+  }
 
   if (acc) { renderAssistantHTML(a.bubble, acc); a.bubble.dataset.raw = acc; }
   else if (!accThink) { a.bubble.textContent = toolRounds.length ? '' : '…'; }
@@ -1583,16 +1625,17 @@ async function streamAssistant() {
   if (stats) a.setStats(stats);
   a.addActions();
 
-  current.messages.push({ role: 'assistant', content: acc, thinking: accThink || undefined, stats: stats || undefined, toolRounds: toolRounds.length ? toolRounds : undefined });
-  if (current.title === 'New chat') {
-    const fu = current.messages.find((m) => m.role === 'user');
+  conv.messages.push({ role: 'assistant', content: acc, thinking: accThink || undefined, stats: stats || undefined, toolRounds: toolRounds.length ? toolRounds : undefined });
+  if (conv.title === 'New chat') {
+    const fu = conv.messages.find((m) => m.role === 'user');
     if (fu) {
       const base = (fu.displayText && fu.displayText.trim()) ? fu.displayText
         : (fu.attachments && fu.attachments[0] ? fu.attachments[0].name : fu.content);
-      current.title = (base.slice(0, 42).trim() || 'New chat');
+      conv.title = (base.slice(0, 42).trim() || 'New chat');
     }
   }
-  store.save(current); renderSidebar(); updateHeaderTitle(); maybeScroll(true);
+  store.save(conv); renderSidebar();
+  if (conv === current) { updateHeaderTitle(); maybeScroll(); }
 }
 
 /* ---------- File attachments (per-message, text-extracted) ---------- */
@@ -1683,14 +1726,25 @@ async function send() {
   const content = buildMessageContent(typed, ready);
   const attachments = ready.map((a) => ({ name: a.name, size: a.size }));
   current.messages.push({ role: 'user', content, displayText: typed, attachments: attachments.length ? attachments : undefined });
+  store.save(current);   // persist now — a failed request must not lose the typed message
   addUserBubble(typed, attachments);
   pendingAttachments = []; renderAttachments();
   autoFollow = true;
   await streamAssistant();
 }
 
-async function regenerate() {
+async function regenerate(ev) {
   if (streaming || !current) return;
+  // Regenerate always replaces the LAST reply — refuse from older rows, where
+  // the click would silently delete the newest answer instead.
+  if (ev && ev.target) {
+    const row = ev.target.closest('.msg.assistant');
+    const rows = document.querySelectorAll('#thread .msg.assistant');
+    if (row && rows.length && row !== rows[rows.length - 1]) {
+      showErr('Only the latest reply can be regenerated.');
+      return;
+    }
+  }
   if (current.messages.length && current.messages[current.messages.length - 1].role === 'assistant') current.messages.pop();
   if (!current.messages.some((m) => m.role === 'user')) return;
   renderConversation();
@@ -1754,7 +1808,13 @@ els.ghFileSearch.addEventListener('input', () => renderGhFiles(false));
 els.ghAttach.addEventListener('click', ghAttachSelected);
 updateGithubBtn();
 els.input.addEventListener('input', autosize);
-els.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!streaming) send(); } });
+els.input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !streaming) { e.preventDefault(); send(); } });
+// Escape closes whichever modal is open (same as its ✕ / backdrop click).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = [...document.querySelectorAll('.modal:not(.hidden)')].pop();
+  if (open) open.classList.add('hidden');
+});
 els.main.addEventListener('scroll', () => { autoFollow = nearBottom(); els.scrollBtn.classList.toggle('hidden', autoFollow); });
 els.scrollBtn.addEventListener('click', () => { autoFollow = true; scrollDown(true); });
 
@@ -1814,6 +1874,7 @@ els.pjUpload.addEventListener('change', async () => {
 });
 els.pjPasteAdd.addEventListener('click', () => {
   const content = els.pjPaste.value; if (!content.trim()) return;
+  if (content.length > 200 * 1024) { alert('Pasted text is larger than 200 KB — trim it down first (it gets injected into every prompt).'); return; }
   const name = els.pjPasteName.value.trim() || ('note-' + (projectDraft.files.length + 1) + '.txt');
   projectDraft.files.push({ id: uidS(), name, content });
   els.pjPaste.value = ''; els.pjPasteName.value = ''; renderProjectFiles();

@@ -53,6 +53,35 @@ function upstreamBase(env) {
   return (env.OLLAMA_BASE_URL || "https://ollama.com").replace(/\/+$/, "");
 }
 
+// Check a visitor's key against the backend, with a short edge-cache so the
+// fetch_url tool doesn't hit upstream on every call. Only a hash of the key is
+// used as the cache key; the verdict ("1"/"0") is all that's stored.
+async function keyIsValid(auth, env) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(auth));
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const cache = (typeof caches !== "undefined" && caches.default) ? caches.default : null;
+  const cacheKey = cache ? new Request("https://key-check.internal/" + hex) : null;
+  if (cache) {
+    const hit = await cache.match(cacheKey).catch(() => null);
+    if (hit) return (await hit.text()) === "1";
+  }
+  let ok = false;
+  try {
+    const r = await fetch(upstreamBase(env) + "/api/me", {
+      method: "POST",
+      headers: { authorization: auth },
+      signal: AbortSignal.timeout(10000),
+    });
+    ok = r.ok;
+  } catch {
+    return false;   // transient failure: deny but don't cache the verdict
+  }
+  if (cache) {
+    try { await cache.put(cacheKey, new Response(ok ? "1" : "0", { headers: { "cache-control": "max-age=300" } })); } catch (e) {}
+  }
+  return ok;
+}
+
 // Confirm a visitor's key is accepted by the backend. Uses the authenticated
 // /api/me endpoint, which returns 401 for an invalid key (unlike /api/tags,
 // which is unauthenticated on Ollama Cloud).
@@ -63,6 +92,7 @@ async function handleValidate(request, env) {
     const r = await fetch(upstreamBase(env) + "/api/me", {
       method: "POST",
       headers: { authorization: auth },
+      signal: AbortSignal.timeout(10000),
     });
     if (r.ok) { track(env, "validate", "ok"); return json({ ok: true }, 200); }
     if (r.status === 401 || r.status === 403) {
@@ -84,6 +114,7 @@ async function handleCatalog(request, env) {
   try {
     const r = await fetch(upstreamBase(env) + "/v1/models", {
       headers: auth ? { authorization: auth } : {},
+      signal: AbortSignal.timeout(10000),
     });
     if (!r.ok) return json({ models: [] }, 200);
     const data = await r.json().catch(() => ({}));
@@ -118,15 +149,22 @@ async function handleChat(request, env) {
   track(env, "chat_attempt", "", model);
 
   let upstream;
+  // Connect-timeout only: the timer is cleared as soon as headers arrive, so
+  // the stream itself stays unbounded.
+  const connectCtrl = new AbortController();
+  const connectTimer = setTimeout(() => connectCtrl.abort(), 15000);
   try {
     upstream = await fetch(upstreamBase(env) + "/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: auth },
       body: JSON.stringify({ model, messages, stream: true, ...(options ? { options } : {}), ...(tools ? { tools } : {}) }),
+      signal: connectCtrl.signal,
     });
   } catch {
     track(env, "chat_backend_error", "unreachable", model);
     return json({ error: "Could not reach the model backend." }, 502);
+  } finally {
+    clearTimeout(connectTimer);
   }
 
   if (upstream.status === 401 || upstream.status === 403) {
@@ -148,7 +186,11 @@ async function handleChat(request, env) {
 // Server-side fetch for the `fetch_url` tool — avoids browser CORS and keeps a
 // few safety limits (auth required, http(s) only, internal hosts blocked).
 async function handleFetch(request, env) {
-  if (!bearer(request)) return json({ error: "Unauthorized" }, 401);
+  // Require a key that the backend actually accepts — a format check alone
+  // would leave this as an open GET relay.
+  const auth = bearer(request);
+  if (!auth) return json({ error: "Unauthorized" }, 401);
+  if (!(await keyIsValid(auth, env))) return json({ error: "Unauthorized" }, 401);
   let target;
   try { target = new URL(new URL(request.url).searchParams.get("url") || ""); } catch { return json({ error: "Invalid URL" }, 400); }
   if (!/^https?:$/.test(target.protocol)) return json({ error: "Only http(s) URLs are allowed." }, 400);
@@ -190,8 +232,14 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/api/models") return json({ models: modelList(env) });
-    if (url.pathname === "/api/catalog") return handleCatalog(request, env);
-    if (url.pathname === "/api/fetch") return handleFetch(request, env);
+    if (url.pathname === "/api/catalog") {
+      if (request.method !== "GET") return json({ error: "Use GET." }, 405);
+      return handleCatalog(request, env);
+    }
+    if (url.pathname === "/api/fetch") {
+      if (request.method !== "GET") return json({ error: "Use GET." }, 405);
+      return handleFetch(request, env);
+    }
     if (url.pathname === "/api/validate") {
       if (request.method !== "POST") return json({ error: "Use POST." }, 405);
       return handleValidate(request, env);
