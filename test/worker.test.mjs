@@ -78,3 +78,101 @@ test("router: responses carry cross-origin-isolation headers", async () => {
   const res = await worker.fetch(new Request("https://x/api/models"), env);
   assert.equal(res.headers.get("cross-origin-embedder-policy"), "require-corp");
 });
+
+test("router: /api/chat tracks attempt and success", async () => {
+  const writes = [];
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("{\"done\":true}\n"));
+      controller.close();
+    },
+  });
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(body, { status: 200 });
+  try {
+    const res = await worker.fetch(new Request("https://x/api/chat", {
+      method: "POST",
+      headers: { authorization: "Bearer t", "content-type": "application/json" },
+      body: JSON.stringify({ model: "b", messages: [{ role: "user", content: "hi" }] }),
+    }), {
+      ...env,
+      AE: { writeDataPoint(dp) { writes.push(dp); } },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(writes.map((dp) => dp.blobs), [
+      ["chat_attempt", "", "b"],
+      ["chat_success", "", "b"],
+    ]);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test("router: /api/chat tracks rejected keys", async () => {
+  const writes = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("nope", { status: 401 });
+  try {
+    const res = await worker.fetch(new Request("https://x/api/chat", {
+      method: "POST",
+      headers: { authorization: "Bearer t", "content-type": "application/json" },
+      body: JSON.stringify({ model: "c", messages: [{ role: "user", content: "hi" }] }),
+    }), {
+      ...env,
+      AE: { writeDataPoint(dp) { writes.push(dp); } },
+    });
+    assert.equal(res.status, 401);
+    assert.deepEqual(writes.map((dp) => dp.blobs), [
+      ["chat_attempt", "", "c"],
+      ["chat_rejected", "401", "c"],
+    ]);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test("router: /api/chat tracks backend errors", async () => {
+  const writes = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("bad gateway", { status: 502 });
+  try {
+    const res = await worker.fetch(new Request("https://x/api/chat", {
+      method: "POST",
+      headers: { authorization: "Bearer t", "content-type": "application/json" },
+      body: JSON.stringify({ model: "c", messages: [{ role: "user", content: "hi" }] }),
+    }), {
+      ...env,
+      AE: { writeDataPoint(dp) { writes.push(dp); } },
+    });
+    assert.equal(res.status, 502);
+    assert.deepEqual(writes.map((dp) => dp.blobs), [
+      ["chat_attempt", "", "c"],
+      ["chat_backend_error", "502", "c"],
+    ]);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test("router: /api/chat tracks unreachable backend", async () => {
+  const writes = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("boom"); };
+  try {
+    const res = await worker.fetch(new Request("https://x/api/chat", {
+      method: "POST",
+      headers: { authorization: "Bearer t", "content-type": "application/json" },
+      body: JSON.stringify({ model: "c", messages: [{ role: "user", content: "hi" }] }),
+    }), {
+      ...env,
+      AE: { writeDataPoint(dp) { writes.push(dp); } },
+    });
+    assert.equal(res.status, 502);
+    assert.deepEqual(writes.map((dp) => dp.blobs), [
+      ["chat_attempt", "", "c"],
+      ["chat_backend_error", "unreachable", "c"],
+    ]);
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});

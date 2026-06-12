@@ -29,7 +29,8 @@ function json(data, status = 200) {
 }
 
 // Aggregate event counter (Analytics Engine). Records only an event name, a
-// coarse outcome, and the model — never the API key or any message content.
+// coarse outcome/detail, and the model — never the API key or any message
+// content.
 function track(env, event, outcome, model) {
   try {
     if (env.AE && typeof env.AE.writeDataPoint === "function") {
@@ -114,7 +115,7 @@ async function handleChat(request, env) {
   const model = requested || env.DEFAULT_MODEL || modelList(env)[0];
   const options = sanitizeOptions(body.options);
   const tools = Array.isArray(body.tools) && body.tools.length ? body.tools : undefined;
-  track(env, "chat", "sent", model);
+  track(env, "chat_attempt", "", model);
 
   let upstream;
   try {
@@ -124,16 +125,20 @@ async function handleChat(request, env) {
       body: JSON.stringify({ model, messages, stream: true, ...(options ? { options } : {}), ...(tools ? { tools } : {}) }),
     });
   } catch {
+    track(env, "chat_backend_error", "unreachable", model);
     return json({ error: "Could not reach the model backend." }, 502);
   }
 
   if (upstream.status === 401 || upstream.status === 403) {
+    track(env, "chat_rejected", String(upstream.status), model);
     return json({ error: "Your API key was rejected. Reconnect with a valid key." }, 401);
   }
   if (!upstream.ok || !upstream.body) {
+    track(env, "chat_backend_error", String(upstream.status), model);
     const detail = await upstream.text().catch(() => "");
     return json({ error: `Backend error (${upstream.status}).`, detail: detail.slice(0, 300) }, 502);
   }
+  track(env, "chat_success", "", model);
 
   return new Response(upstream.body, {
     headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", ...COI_HEADERS },
