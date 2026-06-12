@@ -3,26 +3,35 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>SƎER · Mantic Think</title>
-<meta name="description" content="A bring-your-own-key chat for Ollama models, right in your browser — streaming replies, charts &amp; diagrams, in-browser code execution, reasoning scaffolds, and GitHub context. Nothing stored on our servers." />
+<title>SƎER — Private Ollama Chat in Your Browser · Mantic Think</title>
+<meta name="description" content="A private, free web UI for Ollama — chat with cloud models using your own API key, or connect to the Ollama running on your machine. Streaming replies, charts, in-browser code execution, GitHub context. No account, nothing stored on our servers." />
 <meta name="author" content="Colton Williams" />
 <meta name="copyright" content="© 2026 Colton Williams. All rights reserved." />
 <link rel="canonical" href="https://manticthink.com/" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="SƎER · Mantic Think" />
 <meta property="og:url" content="https://manticthink.com/" />
-<meta property="og:title" content="SƎER · Mantic Think — BYOK Ollama chat in your browser" />
+<meta property="og:title" content="SƎER — Private Ollama Chat in Your Browser" />
 <meta property="og:description" content="A bring-your-own-key chat for Ollama models, right in your browser — streaming replies, charts, in-browser code execution, scaffolds, and GitHub context." />
 <meta property="og:image" content="https://manticthink.com/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:image:alt" content="SƎER · Mantic Think" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="SƎER · Mantic Think — BYOK Ollama chat in your browser" />
+<meta name="twitter:title" content="SƎER — Private Ollama Chat in Your Browser" />
 <meta name="twitter:description" content="A bring-your-own-key chat for Ollama models, right in your browser." />
 <meta name="twitter:image" content="https://manticthink.com/og.png" />
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebApplication","name":"SƎER · Mantic Think","alternateName":"SEER","url":"https://manticthink.com/","applicationCategory":"ProductivityApplication","operatingSystem":"Web","browserRequirements":"Requires JavaScript and an Ollama API key","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"A bring-your-own-key chat for Ollama models that runs entirely in your browser.","author":{"@type":"Person","name":"Colton Williams","url":"https://www.linkedin.com/in/colton-williams"}}
+{"@context":"https://schema.org","@type":"WebApplication","name":"SƎER · Mantic Think","alternateName":"SEER","url":"https://manticthink.com/","applicationCategory":"ProductivityApplication","operatingSystem":"Web","browserRequirements":"Requires JavaScript and an Ollama API key or a local Ollama instance","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":["Streaming chat with Ollama cloud models (bring your own API key)","Local mode: chat with the Ollama running on your own machine","Interactive charts and diagrams","In-browser Python and JavaScript execution","GitHub repository files as chat context","Reasoning scaffolds and per-chat generation settings"],"description":"A private, free web UI for Ollama models that runs entirely in your browser — cloud models via your own key, or local models via your own machine.","author":{"@type":"Person","name":"Colton Williams","url":"https://www.linkedin.com/in/colton-williams"}}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"What is SƎER?","acceptedAnswer":{"@type":"Answer","text":"SƎER is a free, private web UI for Ollama models. Chat with Ollama Cloud models using your own API key, or connect it to the Ollama instance running on your own machine — streaming replies, charts, in-browser code execution, and GitHub context included."}},
+{"@type":"Question","name":"Do I need an account?","acceptedAnswer":{"@type":"Answer","text":"No account and no signup. Paste your own Ollama API key, or use local mode with the Ollama on your computer — no key needed at all."}},
+{"@type":"Question","name":"Where are my conversations stored?","acceptedAnswer":{"@type":"Answer","text":"Only in your browser. Our server never stores your messages or your API key — in cloud mode it relays requests to Ollama without logging them, and in local mode requests never reach our servers at all."}},
+{"@type":"Question","name":"Can I chat with models running on my own computer?","acceptedAnswer":{"@type":"Answer","text":"Yes. Choose 'Use local Ollama' and SƎER connects your browser directly to your local Ollama instance — a zero-install web UI for local LLMs. Start Ollama with OLLAMA_ORIGINS=https://manticthink.com to allow it."}},
+{"@type":"Question","name":"Which models can I use?","acceptedAnswer":{"@type":"Answer","text":"Any model your Ollama key or local instance offers — gpt-oss, Qwen, DeepSeek, Llama, and more. You curate your own model list in the picker."}}
+]}
 </script>
 <meta name="theme-color" content="#060608" />
 <meta name="color-scheme" content="dark" />
@@ -69,6 +78,29 @@
       <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M11.182.008c.107-.013.214-.013.32 0 .073.928-.28 1.621-.69 2.112-.41.49-1.058.93-1.804.872-.087-.91.302-1.581.69-2.06.43-.535 1.143-.893 1.484-.924zm3.022 11.55c-.02.06-.31 1.06-1.03 2.09-.62.89-1.27 1.78-2.29 1.8-1 .02-1.32-.59-2.47-.59-1.14 0-1.5.57-2.45.61-.98.04-1.72-.96-2.35-1.85C2.31 11.79 1.34 8.42 2.66 6.21c.65-1.1 1.82-1.79 3.09-1.81.97-.02 1.88.65 2.47.65.59 0 1.7-.8 2.87-.68.49.02 1.86.2 2.74 1.49-.07.04-1.63.95-1.61 2.85.02 2.27 1.99 3.02 2.02 3.04z"/></svg>
       iOS beta on TestFlight
     </a>
+    <section class="gate-faq" aria-label="Frequently asked questions">
+      <h2>Questions, answered</h2>
+      <details>
+        <summary>What is SƎER?</summary>
+        <p>A free, private web UI for Ollama models. Chat with Ollama Cloud models using your own API key, or connect to the Ollama running on your own machine — with streaming replies, charts, in-browser code execution, and GitHub context.</p>
+      </details>
+      <details>
+        <summary>Do I need an account?</summary>
+        <p>No account, no signup. Paste your own Ollama API key — or use local mode with the Ollama on your computer, which needs no key at all.</p>
+      </details>
+      <details>
+        <summary>Where are my conversations stored?</summary>
+        <p>Only in your browser. Our server never stores your messages or your key — and in local mode, requests never reach our servers at all. See the <a href="/privacy">privacy policy</a>.</p>
+      </details>
+      <details>
+        <summary>Can I chat with models on my own computer?</summary>
+        <p>Yes — choose “Use local Ollama” above and your browser connects straight to your local instance. A zero-install web UI for local LLMs.</p>
+      </details>
+      <details>
+        <summary>Which models can I use?</summary>
+        <p>Any model your Ollama key or local instance offers — gpt-oss, Qwen, DeepSeek, Llama, and more. You curate your own list in the model picker.</p>
+      </details>
+    </section>
     <div class="gate-foot">
       Created by <a href="https://www.linkedin.com/in/colton-williams" target="_blank" rel="noopener">Cole</a>
       <span class="dot">·</span>
