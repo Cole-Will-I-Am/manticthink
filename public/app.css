@@ -498,6 +498,33 @@ select#model {
 .sb-errors li { margin: 2px 0; }
 .sb-preview { background: var(--bg-primary); border: 0.5px solid var(--border); border-radius: 10px; padding: 12px; font-family: var(--mono); font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; margin: 0; }
 
+/* AI debate modal */
+.db-card { max-width: 720px; }
+.db-setup { padding: 14px 16px; border-bottom: 0.5px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.db-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.db-sel {
+  appearance: none; background: var(--bg-secondary); color: var(--text-secondary);
+  border: 0.5px solid var(--border-light); border-radius: 999px; padding: 7px 14px;
+  font-family: var(--font); font-size: 12px; cursor: pointer; max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.db-sel:focus { border-color: rgba(97,121,255,0.4); outline: none; }
+.db-vs-lbl { color: var(--text-tertiary); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+.db-stop { background: rgba(232,90,90,0.12); color: var(--danger); }
+.db-feed { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.db-feed:empty::before { content: "Pick two models and a topic, then start the debate."; color: var(--text-tertiary); font-size: 12.5px; }
+.db-topic { padding: 10px 14px; background: var(--accent-soft); border: 0.5px solid rgba(97,121,255,0.2); border-radius: 12px; }
+.db-q { color: var(--text-primary); font-size: 14px; font-weight: 500; }
+.db-vs { color: var(--text-tertiary); font-size: 11px; margin-top: 5px; letter-spacing: 0.02em; }
+.db-turn { border-left: 2px solid var(--border-light); padding-left: 12px; }
+.db-turn.db-A { border-left-color: var(--accent); }
+.db-turn.db-B { border-left-color: #c98a5e; }
+.db-speaker { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px; }
+.db-turn.db-A .db-speaker { color: var(--accent); }
+.db-turn.db-B .db-speaker { color: #d49a6e; }
+.db-body { color: var(--text-primary); font-size: 14px; line-height: 1.6; }
+.db-err { color: var(--danger); font-size: 12.5px; }
+
 /* model management modal */
 .modal {
   position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px;

@@ -64,6 +64,9 @@ const els = {
   pmTemp: $('pmTemp'), pmTopP: $('pmTopP'), pmTopK: $('pmTopK'), pmMaxTok: $('pmMaxTok'),
   pmSave: $('pmSave'), pmCancel: $('pmCancel'),
   scaffoldBtn: $('scaffoldBtn'), scaffoldBar: $('scaffoldBar'),
+  debateBtn: $('debateBtn'), debateModal: $('debateModal'), dbClose: $('dbClose'),
+  dbTopic: $('dbTopic'), dbModelA: $('dbModelA'), dbModelB: $('dbModelB'),
+  dbMode: $('dbMode'), dbRounds: $('dbRounds'), dbStart: $('dbStart'), dbStop: $('dbStop'), dbFeed: $('dbFeed'),
   scaffoldModal: $('scaffoldModal'), scClose: $('scClose'), scSearch: $('scSearch'),
   scNew: $('scNew'), scList: $('scList'), scTemplates: $('scTemplates'),
   scaffoldBuilder: $('scaffoldBuilder'), sbTitle: $('sbTitle'), sbClose: $('sbClose'), sbErrors: $('sbErrors'),
@@ -2128,6 +2131,157 @@ function setSidebarCollapsed(on, persist) {
 function toggleSidebar() { setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed')); }
 try { if (localStorage.getItem(SIDEBAR_KEY) === '1') setSidebarCollapsed(true, false); } catch (e) {}
 
+/* ---------- AI Debate ----------
+   Two models take turns on a topic, in their own modal. Self-contained: it does
+   not touch the chat conversation/store/streaming state. */
+let debateController = null;
+let debateRunning = false;
+
+function openDebate() {
+  fillDebateModels();
+  els.dbStop.classList.add('hidden');
+  els.dbStart.classList.remove('hidden');
+  els.dbStart.disabled = false;
+  els.debateModal.classList.remove('hidden');
+  els.dbTopic.focus();
+}
+function closeDebate() {
+  if (debateController) { try { debateController.abort(); } catch (e) {} }
+  els.debateModal.classList.add('hidden');
+}
+function fillDebateModels() {
+  const opts = [...els.model.options].filter((o) => !o.value.startsWith('preset:') && o.value);
+  for (const sel of [els.dbModelA, els.dbModelB]) {
+    const prev = sel.value;
+    sel.innerHTML = '';
+    for (const o of opts) { const c = document.createElement('option'); c.value = o.value; c.textContent = o.textContent; sel.appendChild(c); }
+    if (prev && opts.some((o) => o.value === prev)) sel.value = prev;
+  }
+  // Default the two models to different choices when possible.
+  if (els.dbModelB.options.length > 1 && els.dbModelA.value === els.dbModelB.value) els.dbModelB.selectedIndex = 1;
+}
+
+function debatePersona(mode, side, topic) {
+  if (mode === 'debate') {
+    const role = side === 'A'
+      ? 'the PROPONENT, arguing IN FAVOR of the proposition'
+      : 'the OPPONENT, arguing AGAINST the proposition';
+    return `You are ${role} in a structured debate. Topic: "${topic}". Make your strongest case, directly rebut the other side's most recent points, and stay strictly on topic. Be substantive but concise: under 150 words. Do not restate your role, narrate stage directions, or prefix your name — just give the argument in plain persuasive prose.`;
+  }
+  const who = side === 'A' ? 'Analyst A' : 'Analyst B';
+  return `You are ${who}, one of two thoughtful analysts discussing a question together. Topic: "${topic}". Build on or respectfully challenge the other analyst's most recent points, add fresh angles, and avoid repeating what's already been said. Be concise: under 150 words. Do not prefix your name or narrate stage directions.`;
+}
+function debateUserPrompt(topic, transcript, label, mode) {
+  if (!transcript.length) {
+    return mode === 'debate'
+      ? `The debate topic is: "${topic}". Open with your position as the ${label}.`
+      : `The question is: "${topic}". Open the discussion with your initial take as ${label}.`;
+  }
+  const lines = transcript.map((t) => `[${t.label}]: ${t.text}`).join('\n\n');
+  return `Topic: "${topic}"\n\nConversation so far:\n${lines}\n\nIt is now your turn as ${label}. Respond directly to the most recent point.`;
+}
+
+function addDebateHeader(topic, modelA, modelB, labels) {
+  const h = document.createElement('div'); h.className = 'db-topic';
+  const q = document.createElement('div'); q.className = 'db-q'; q.textContent = topic;
+  const vs = document.createElement('div'); vs.className = 'db-vs';
+  vs.textContent = `${labels.A} · ${modelA}    vs    ${labels.B} · ${modelB}`;
+  h.append(q, vs); els.dbFeed.appendChild(h);
+}
+function addDebateTurn(label, model, side) {
+  const turn = document.createElement('div'); turn.className = 'db-turn db-' + side;
+  const head = document.createElement('div'); head.className = 'db-speaker'; head.textContent = `${label} · ${model}`;
+  const body = document.createElement('div'); body.className = 'db-body bubble plain';
+  const typing = document.createElement('span'); typing.className = 'typing'; typing.innerHTML = '<span></span><span></span><span></span>';
+  body.appendChild(typing);
+  turn.append(head, body); els.dbFeed.appendChild(turn);
+  els.dbFeed.scrollTop = els.dbFeed.scrollHeight;
+  let started = false;
+  return {
+    setText(t) { if (!started) { started = true; if (typing.parentElement) typing.remove(); } body.textContent = t; els.dbFeed.scrollTop = els.dbFeed.scrollHeight; },
+    finalize(t) {
+      if (typing.parentElement) typing.remove();
+      if (t) { renderAssistantHTML(body, t); body.dataset.raw = t; } else { body.textContent = '…'; }
+      els.dbFeed.scrollTop = els.dbFeed.scrollHeight;
+    },
+  };
+}
+
+async function streamDebateTurn(model, system, user, node, signal) {
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
+  const resp = await fetch(localMode ? localBase() + '/api/chat' : '/api/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...authHeader() },
+    body: JSON.stringify({ model, messages, stream: true }),
+    signal,
+  });
+  if (!localMode && resp.status === 401) throw new Error('Your key was rejected — please reconnect.');
+  if (!resp.ok || !resp.body) { const d = await resp.text().catch(() => ''); throw new Error('Request failed (' + resp.status + ') ' + d.slice(0, 160)); }
+  const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = ''; let acc = '';
+  while (true) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n'); buf = lines.pop();
+    for (const line of lines) {
+      const t = line.trim(); if (!t) continue;
+      let obj; try { obj = JSON.parse(t); } catch (e) { continue; }
+      if (obj.error) throw new Error(obj.error);
+      const msg = obj.message || {};
+      if (msg.content) { acc += msg.content; node.setText(acc); }
+    }
+  }
+  node.finalize(acc);
+  return acc;
+}
+
+async function runDebate() {
+  if (debateRunning) return;
+  const topic = els.dbTopic.value.trim();
+  if (!topic) { els.dbTopic.focus(); return; }
+  const modelA = els.dbModelA.value, modelB = els.dbModelB.value;
+  if (!modelA || !modelB) { showErr('Pick two models for the debate.'); return; }
+  const mode = els.dbMode.value;
+  const rounds = Math.max(1, Math.min(4, parseInt(els.dbRounds.value, 10) || 2));
+  const labels = mode === 'debate' ? { A: 'Proponent', B: 'Opponent' } : { A: 'Analyst A', B: 'Analyst B' };
+
+  debateRunning = true;
+  els.dbStart.disabled = true;
+  els.dbStop.classList.remove('hidden');
+  els.dbFeed.innerHTML = '';
+  debateController = new AbortController();
+  addDebateHeader(topic, modelA, modelB, labels);
+
+  const transcript = [];
+  try {
+    outer:
+    for (let r = 0; r < rounds; r++) {
+      for (const side of ['A', 'B']) {
+        const model = side === 'A' ? modelA : modelB;
+        const node = addDebateTurn(labels[side], model, side);
+        const text = await streamDebateTurn(
+          model,
+          debatePersona(mode, side, topic),
+          debateUserPrompt(topic, transcript, labels[side], mode),
+          node,
+          debateController.signal
+        );
+        transcript.push({ side, label: labels[side], model, text });
+        if (debateController.signal.aborted) break outer;
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      const err = document.createElement('div'); err.className = 'db-err';
+      err.textContent = e.message || 'Something went wrong.'; els.dbFeed.appendChild(err);
+    }
+  }
+  debateRunning = false;
+  debateController = null;
+  els.dbStop.classList.add('hidden');
+  els.dbStart.disabled = false;
+  els.dbStart.textContent = 'Restart debate';
+}
+
 /* ---------- Events ---------- */
 els.connect.addEventListener('click', connect);
 if (els.connectLocal) els.connectLocal.addEventListener('click', connectLocal);
@@ -2139,6 +2293,12 @@ els.newChat.addEventListener('click', () => { newConversation(); closeDrawer(); 
 els.menuBtn.addEventListener('click', () => { if (desktopMq.matches) toggleSidebar(); else openDrawer(); });
 if (els.collapseBtn) els.collapseBtn.addEventListener('click', toggleSidebar);
 els.scrim.addEventListener('click', closeDrawer);
+
+els.debateBtn.addEventListener('click', (e) => { e.stopPropagation(); openDebate(); closeDrawer(); });
+els.dbClose.addEventListener('click', closeDebate);
+els.debateModal.addEventListener('click', (e) => { if (e.target === els.debateModal) closeDebate(); });
+els.dbStart.addEventListener('click', runDebate);
+els.dbStop.addEventListener('click', () => { if (debateController) debateController.abort(); });
 els.model.addEventListener('change', () => {
   if (!current) return;
   const v = els.model.value;
