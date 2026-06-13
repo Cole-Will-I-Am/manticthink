@@ -89,7 +89,11 @@ body::after {
 /* ---------- Gate (hero) ---------- */
 #gate {
   position: relative; z-index: 3; height: 100%; overflow-y: auto;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
+  /* `safe` keeps the content centered when it fits but falls back to
+     top-aligned (scrollable) when it's taller than the viewport, so the
+     logo/wordmark never get clipped above the top edge. */
+  justify-content: safe center;
   padding: 24px; padding-top: calc(24px + env(safe-area-inset-top));
 }
 #gate > * { animation: rise 0.65s var(--ease) backwards; }
@@ -101,6 +105,7 @@ body::after {
 #gate > *:nth-child(6) { animation-delay: 0.42s; }
 #gate > *:nth-child(7) { animation-delay: 0.48s; }
 #gate > *:nth-child(8) { animation-delay: 0.54s; }
+.gate-emblem { height: 60px; width: auto; margin-bottom: 12px; filter: drop-shadow(0 6px 20px rgba(97,121,255,0.28)); }
 #gate .wordmark { height: 34px; }
 .gate-label { margin-top: 16px; font-size: 11px; letter-spacing: 0.34em; text-transform: uppercase; color: var(--text-tertiary); }
 .gate-tagline {
@@ -213,6 +218,7 @@ body::after {
 .gate-faq details[open] summary { color: var(--text-primary); }
 .gate-faq details[open] summary::after { content: "–"; }
 .gate-faq p { margin: 0; padding: 0 14px 12px; font-size: 12.5px; line-height: 1.6; color: var(--text-tertiary); }
+.faq-emblem { height: 40px; width: auto; display: block; margin: 2px 14px 10px; }
 .gate-faq p a { color: var(--accent); text-decoration: none; }
 .gate-faq p a:hover { text-decoration: underline; }
 .gate-foot { margin-top: 20px; font-size: 11px; letter-spacing: 0.02em; color: var(--text-tertiary); }
