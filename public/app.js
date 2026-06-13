@@ -69,6 +69,7 @@ const els = {
   dbMode: $('dbMode'), dbRounds: $('dbRounds'), dbStart: $('dbStart'), dbStop: $('dbStop'), dbFeed: $('dbFeed'),
   dbSave: $('dbSave'), dbSavedBtn: $('dbSavedBtn'), dbSaved: $('dbSaved'),
   dbSynth: $('dbSynth'), dbShare: $('dbShare'),
+  dbCard: $('dbCard'), dbHead: $('dbHead'), dbCta: $('dbCta'), dbCtaStart: $('dbCtaStart'), dbCtaCopy: $('dbCtaCopy'),
   scaffoldModal: $('scaffoldModal'), scClose: $('scClose'), scSearch: $('scSearch'),
   scNew: $('scNew'), scList: $('scList'), scTemplates: $('scTemplates'),
   scaffoldBuilder: $('scaffoldBuilder'), sbTitle: $('sbTitle'), sbClose: $('sbClose'), sbErrors: $('sbErrors'),
@@ -2145,7 +2146,26 @@ function loadDebates() { try { const v = JSON.parse(localStorage.getItem(DEBATES
 function saveDebatesList(list) { try { localStorage.setItem(DEBATES_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
 function updateSavedCount() { const n = loadDebates().length; els.dbSavedBtn.textContent = n ? `Saved (${n})` : 'Saved'; }
 
+function exitSharedView() {
+  els.dbCard.classList.remove('db-view');
+  els.dbCta.classList.add('hidden');
+  els.dbHead.textContent = 'AI Debate';
+}
+function enterSharedView() {
+  els.dbCard.classList.add('db-view');
+  els.dbCta.classList.remove('hidden');
+  els.dbHead.textContent = 'Shared debate · Mantic Think';
+}
+// "Start your own" from a shared link: drop the viewer and, if the visitor is in
+// the app, give them a fresh debate setup; otherwise reveal the landing gate.
+function startOwnFromShared() {
+  exitSharedView();
+  if (apiKey || localMode) { els.dbFeed.innerHTML = ''; openDebate(); }
+  else { closeDebate(); }
+}
+
 function openDebate() {
+  exitSharedView();
   fillDebateModels();
   els.dbStop.classList.add('hidden');
   els.dbSave.classList.add('hidden');
@@ -2266,10 +2286,9 @@ function openSharedDebate(rec) {
   fillDebateModels();
   els.debateModal.classList.remove('hidden');
   loadDebateRecord(rec);
-  // A shared debate isn't in this browser's library yet — offer to save it.
   currentDebate = rec;
-  els.dbSave.classList.remove('hidden'); els.dbSave.classList.remove('saved');
-  els.dbSave.textContent = '★ Save'; els.dbSave.disabled = false;
+  // Plain read-only presentation for (possibly non-user) visitors, with a CTA.
+  enterSharedView();
 }
 function maybeOpenSharedDebate() {
   const m = (location.hash || '').match(/[#&]debate=([^&]+)/);
@@ -2460,6 +2479,8 @@ els.dbStop.addEventListener('click', () => { if (debateController) debateControl
 els.dbSave.addEventListener('click', saveCurrentDebate);
 els.dbShare.addEventListener('click', () => shareDebate(currentDebate, els.dbShare));
 els.dbSavedBtn.addEventListener('click', toggleSavedPanel);
+els.dbCtaStart.addEventListener('click', startOwnFromShared);
+els.dbCtaCopy.addEventListener('click', () => shareDebate(currentDebate, els.dbCtaCopy));
 els.model.addEventListener('change', () => {
   if (!current) return;
   const v = els.model.value;

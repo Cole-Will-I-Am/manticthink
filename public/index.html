@@ -492,9 +492,9 @@
   </div>
 
   <div id="debateModal" class="modal hidden">
-    <div class="modal-card db-card">
+    <div id="dbCard" class="modal-card db-card">
       <div class="modal-head">
-        <span>AI Debate</span>
+        <span id="dbHead">AI Debate</span>
         <button id="dbClose" class="icon-btn" type="button" aria-label="Close">✕</button>
       </div>
       <div class="db-setup">
@@ -523,6 +523,16 @@
       </div>
       <div id="dbFeed" class="db-feed"></div>
       <div id="dbSaved" class="db-saved hidden"></div>
+      <div id="dbCta" class="db-cta hidden">
+        <div class="db-cta-text">
+          <img class="wordmark" src="/seer-wordmark.svg" alt="SEER" />
+          <span>Two AI models debated this on <b>Mantic Think</b> — free, private, bring-your-own-key AI chat. Start your own.</span>
+        </div>
+        <div class="db-cta-acts">
+          <button id="dbCtaStart" class="btn-primary" type="button">Start your own debate</button>
+          <button id="dbCtaCopy" class="mm-add-btn db-ghost" type="button">Copy link</button>
+        </div>
+      </div>
     </div>
   </div>
 
