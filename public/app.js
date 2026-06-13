@@ -68,6 +68,7 @@ const els = {
   dbTopic: $('dbTopic'), dbModelA: $('dbModelA'), dbModelB: $('dbModelB'),
   dbMode: $('dbMode'), dbRounds: $('dbRounds'), dbStart: $('dbStart'), dbStop: $('dbStop'), dbFeed: $('dbFeed'),
   dbSave: $('dbSave'), dbSavedBtn: $('dbSavedBtn'), dbSaved: $('dbSaved'),
+  dbSynth: $('dbSynth'), dbShare: $('dbShare'),
   scaffoldModal: $('scaffoldModal'), scClose: $('scClose'), scSearch: $('scSearch'),
   scNew: $('scNew'), scList: $('scList'), scTemplates: $('scTemplates'),
   scaffoldBuilder: $('scaffoldBuilder'), sbTitle: $('sbTitle'), sbClose: $('sbClose'), sbErrors: $('sbErrors'),
@@ -2148,6 +2149,7 @@ function openDebate() {
   fillDebateModels();
   els.dbStop.classList.add('hidden');
   els.dbSave.classList.add('hidden');
+  els.dbShare.classList.add('hidden');
   els.dbSaved.classList.add('hidden');
   els.dbFeed.classList.remove('hidden');
   els.dbStart.classList.remove('hidden');
@@ -2203,13 +2205,15 @@ function renderSavedDebates() {
     meta.textContent = `${rec.modelA} vs ${rec.modelB} · ${rec.mode === 'debate' ? 'Debate' : 'Discussion'} · ${when.toLocaleDateString()}`;
     main.append(topic, meta);
     main.addEventListener('click', () => loadDebateRecord(rec));
+    const share = document.createElement('button'); share.className = 'db-saved-del'; share.type = 'button'; share.textContent = '↗'; share.title = 'Copy share link';
+    share.addEventListener('click', (e) => { e.stopPropagation(); shareDebate(rec, share); });
     const del = document.createElement('button'); del.className = 'db-saved-del'; del.type = 'button'; del.textContent = '✕'; del.title = 'Delete';
     del.addEventListener('click', (e) => {
       e.stopPropagation();
       saveDebatesList(loadDebates().filter((d) => d.id !== rec.id));
       updateSavedCount(); renderSavedDebates();
     });
-    item.append(main, del); els.dbSaved.appendChild(item);
+    item.append(main, share, del); els.dbSaved.appendChild(item);
   }
 }
 
@@ -2229,7 +2233,51 @@ function loadDebateRecord(rec) {
   }
   currentDebate = { topic: rec.topic, modelA: rec.modelA, modelB: rec.modelB, mode: rec.mode, labels, rounds: 0, transcript: rec.transcript };
   els.dbSave.classList.add('hidden');   // already saved
+  els.dbShare.classList.remove('hidden');
   hideSavedPanel();
+}
+
+// Share links encode the whole debate in the URL hash (no server storage),
+// consistent with the site's browser-only data model.
+function encodeDebate(rec) {
+  const slim = { t: rec.topic, a: rec.modelA, b: rec.modelB, m: rec.mode, l: rec.labels,
+    x: (rec.transcript || []).map((tr) => ({ s: tr.side, l: tr.label, m: tr.model, x: tr.text })) };
+  const json = JSON.stringify(slim);
+  return btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decodeDebate(str) {
+  try {
+    const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    const s = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    if (!s || !Array.isArray(s.x)) return null;
+    return { topic: s.t || '', modelA: s.a || '', modelB: s.b || '', mode: s.m || 'debate', labels: s.l,
+      transcript: s.x.map((tr) => ({ side: tr.s, label: tr.l, model: tr.m, text: tr.x })) };
+  } catch (e) { return null; }
+}
+async function shareDebate(rec, btn) {
+  if (!rec || !rec.transcript || !rec.transcript.length) return;
+  const url = location.origin + '/#debate=' + encodeDebate(rec);
+  let ok = true;
+  try { await navigator.clipboard.writeText(url); } catch (e) { ok = false; }
+  if (!ok) { window.prompt('Copy this debate link:', url); return; }
+  if (btn) { const t = btn.textContent; btn.textContent = 'Link copied ✓'; setTimeout(() => { btn.textContent = t; }, 1400); }
+}
+function openSharedDebate(rec) {
+  fillDebateModels();
+  els.debateModal.classList.remove('hidden');
+  loadDebateRecord(rec);
+  // A shared debate isn't in this browser's library yet — offer to save it.
+  currentDebate = rec;
+  els.dbSave.classList.remove('hidden'); els.dbSave.classList.remove('saved');
+  els.dbSave.textContent = '★ Save'; els.dbSave.disabled = false;
+}
+function maybeOpenSharedDebate() {
+  const m = (location.hash || '').match(/[#&]debate=([^&]+)/);
+  if (!m) return;
+  const rec = decodeDebate(m[1]);
+  // Drop the hash so a later reload or page-share doesn't re-trigger.
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  if (rec && rec.transcript.length) openSharedDebate(rec);
 }
 function fillDebateModels() {
   const opts = [...els.model.options].filter((o) => !o.value.startsWith('preset:') && o.value);
@@ -2261,6 +2309,16 @@ function debateUserPrompt(topic, transcript, label, mode) {
   }
   const lines = transcript.map((t) => `[${t.label}]: ${t.text}`).join('\n\n');
   return `Topic: "${topic}"\n\nConversation so far:\n${lines}\n\nIt is now your turn as ${label}. Respond directly to the most recent point.`;
+}
+function synthesisPersona(mode, topic) {
+  if (mode === 'debate') {
+    return `You are an impartial moderator closing a debate on: "${topic}". Read the full transcript and write a brief, neutral synthesis: the single strongest point from each side, any genuine common ground, and a balanced judgment of which case was more persuasive and why. Be fair to both sides. Under 180 words. Do not prefix your name or narrate stage directions.`;
+  }
+  return `You are synthesizing a discussion on: "${topic}". Read the full transcript and summarize the key insights, where the analysts agreed and differed, and the most important takeaway. Neutral and concise — under 180 words. Do not prefix your name.`;
+}
+function synthesisUserPrompt(topic, transcript, mode) {
+  const lines = transcript.map((t) => `[${t.label}]: ${t.text}`).join('\n\n');
+  return `Topic: "${topic}"\n\nFull transcript:\n${lines}\n\nNow write the closing ${mode === 'debate' ? 'synthesis and verdict' : 'synthesis'}.`;
 }
 
 function addDebateHeader(topic, modelA, modelB, labels) {
@@ -2330,6 +2388,7 @@ async function runDebate() {
   els.dbStart.disabled = true;
   els.dbStop.classList.remove('hidden');
   els.dbSave.classList.add('hidden');
+  els.dbShare.classList.add('hidden');
   els.dbSave.classList.remove('saved'); els.dbSave.textContent = '★ Save'; els.dbSave.disabled = false;
   hideSavedPanel();
   els.dbFeed.innerHTML = '';
@@ -2355,6 +2414,18 @@ async function runDebate() {
         if (debateController.signal.aborted) break outer;
       }
     }
+    // Optional closing synthesis from an impartial moderator (uses the first model).
+    if (els.dbSynth.checked && !debateController.signal.aborted && transcript.length) {
+      const node = addDebateTurn('Synthesis', modelA, 'S');
+      const text = await streamDebateTurn(
+        modelA,
+        synthesisPersona(mode, topic),
+        synthesisUserPrompt(topic, transcript, mode),
+        node,
+        debateController.signal
+      );
+      transcript.push({ side: 'S', label: 'Synthesis', model: modelA, text });
+    }
   } catch (e) {
     if (e.name !== 'AbortError') {
       const err = document.createElement('div'); err.className = 'db-err';
@@ -2366,7 +2437,7 @@ async function runDebate() {
   els.dbStop.classList.add('hidden');
   els.dbStart.disabled = false;
   els.dbStart.textContent = 'Restart debate';
-  if (transcript.length) els.dbSave.classList.remove('hidden');
+  if (transcript.length) { els.dbSave.classList.remove('hidden'); els.dbShare.classList.remove('hidden'); }
 }
 
 /* ---------- Events ---------- */
@@ -2387,6 +2458,7 @@ els.debateModal.addEventListener('click', (e) => { if (e.target === els.debateMo
 els.dbStart.addEventListener('click', runDebate);
 els.dbStop.addEventListener('click', () => { if (debateController) debateController.abort(); });
 els.dbSave.addEventListener('click', saveCurrentDebate);
+els.dbShare.addEventListener('click', () => shareDebate(currentDebate, els.dbShare));
 els.dbSavedBtn.addEventListener('click', toggleSavedPanel);
 els.model.addEventListener('change', () => {
   if (!current) return;
@@ -2535,6 +2607,7 @@ els.pjPasteAdd.addEventListener('click', () => {
 
 /* ---------- Boot ---------- */
 (async function boot() {
+  maybeOpenSharedDebate();   // a /#debate=… link opens the shared debate over the gate/app
   if (els.rememberKey) els.rememberKey.checked = rememberPref();
   if (localMode) {
     try {
