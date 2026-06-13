@@ -21,6 +21,12 @@ Live: https://manticthink.com
   - `GET /api/catalog` — the backend's full model catalog (for the model manager).
   - `GET /api/fetch?url=…` — server-side fetch proxy for the `fetch_url` tool
     (auth-gated, http(s) only, loopback/private hosts blocked, ~64 KB read cap).
+  - `POST /api/debate` — store a debate the user chose to **Share** (validated,
+    200 KB cap, 1-year TTL) in the `DEBATES` KV namespace; returns a short id.
+  - `GET /api/debate/:id` — fetch a shared debate by id.
+  - `GET /d/:id` — short share link: serves the SPA (which loads and renders the
+    debate read-only) and rewrites the OG/Twitter meta via `HTMLRewriter` so the
+    link unfurls on social with the debate's topic and matchup.
   - Everything else — the static SEER site, served with
     `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` headers (via
     `public/_headers`) so the page is cross-origin isolated — required for
@@ -33,7 +39,20 @@ forwarded upstream per request. It is never stored or logged server-side.
 
 Beyond basic chat, the UI includes:
 
-- **Conversations** — local history with rename/delete and sidebar search.
+- **Conversations** — local history with rename/delete, sidebar search, and a
+  collapsible sidebar on desktop.
+- **AI Debate** — pose a question and watch two models take turns (Debate, i.e.
+  for vs against, or Discussion), with an optional impartial closing synthesis.
+  Save debates to revisit, and share them via short `/d/:id` links that open a
+  clean read-only view for non-users.
+- **Local Ollama mode** — instead of a cloud key, point the app at the Ollama
+  running on your own machine; requests go browser→localhost and never touch our
+  server (needs `OLLAMA_ORIGINS=https://manticthink.com ollama serve`).
+- **MCP connectors** — add a remote MCP tool server (URL + optional bearer
+  token); its tools join the function-calling loop, browser-direct over
+  Streamable HTTP.
+- **Model presets** — save custom "models" (base model + system prompt + sampling
+  params) and pick them from the model picker.
 - **Models** — pick any backend model; add by name or browse the catalog.
 - **Generation settings** — system prompt and sampling params (temperature,
   top_p, top_k, min_p, repeat penalty, max tokens, seed, stop).
@@ -56,7 +75,8 @@ Beyond basic chat, the UI includes:
 ## Data & privacy
 
 **Everything is stored in the visitor's browser; the server stores nothing
-per-user.** No accounts, no cross-device sync.
+per-user — except debates you explicitly Share.** No accounts, no cross-device
+sync.
 
 - **In the browser** (`localStorage` / `sessionStorage`): the Ollama key, an
   optional GitHub token, conversations, projects, scaffolds, saved snippets,
@@ -67,8 +87,13 @@ per-user.** No accounts, no cross-device sync.
   under *your* key, forwarded by the Worker, never stored or logged.
 - **Sent to GitHub** (if connected): calls go directly from your browser to
   `api.github.com` with your token.
-- **Server-side:** only aggregate, anonymous counters (Cloudflare Analytics
-  Engine) — event name, outcome, and model — **never keys or message content.**
+- **Shared debates (the one exception):** if you tap *Share* on a debate, that
+  debate's content (the topic and the models' responses) is stored server-side
+  in a KV namespace so the `/d/:id` link works for anyone who opens it — only
+  debates you explicitly share, kept ~1 year, never your key or other chats.
+- **Server-side otherwise:** only aggregate, anonymous counters (Cloudflare
+  Analytics Engine) — event name, outcome, and model — **never keys or message
+  content.**
 
 Privacy policy: <https://manticthink.com/privacy>.
 
@@ -100,6 +125,7 @@ highlight.js) is vendored under `public/vendor/`.
 - Tool loop: up to 8 iterations per turn.
 - `fetch_url`: ~64 KB read, ~8k characters returned.
 - Code execution: 10s (JS) / 30s (Python) timeouts.
+- AI Debate: 1–4 rounds each; shared debates capped at 200 KB and kept ~1 year.
 
 ## Configuration
 
@@ -112,6 +138,10 @@ Edit `wrangler.toml` `[vars]`:
 | `DEFAULT_MODEL` | Model used when a request omits one |
 
 There is no server-side API key — by design.
+
+The Worker also binds a KV namespace `DEBATES` (storage for shared debates) and
+an Analytics Engine dataset `manticthink_events` (anonymous counters), both in
+`wrangler.toml`.
 
 ## Develop & deploy
 
