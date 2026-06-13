@@ -45,7 +45,7 @@ const els = {
   gate: $('gate'), keyInput: $('keyInput'), gateErr: $('gateErr'), connect: $('connect'), rememberKey: $('rememberKey'),
   connectLocal: $('connectLocal'), localHint: $('localHint'), modeBadge: $('modeBadge'),
   app: $('app'), scrim: $('scrim'), sidebar: $('sidebar'), convList: $('convList'),
-  newChat: $('newChat'), disconnect: $('disconnect'), menuBtn: $('menuBtn'),
+  newChat: $('newChat'), disconnect: $('disconnect'), menuBtn: $('menuBtn'), collapseBtn: $('collapseBtn'),
   model: $('model'), headerTitle: $('headerTitle'),
   main: $('main'), thread: $('thread'), scrollBtn: $('scrollBtn'),
   input: $('input'), send: $('send'), err: $('err'),
@@ -2117,13 +2117,27 @@ function maybeScroll(force) { scrollDown(force); }
 function openDrawer() { document.body.classList.add('drawer-open'); }
 function closeDrawer() { document.body.classList.remove('drawer-open'); }
 
+// Desktop-only: collapse the sidebar to reclaim chat width (persisted).
+const SIDEBAR_KEY = 'mt_sidebar_collapsed';
+const desktopMq = window.matchMedia('(min-width: 761px)');
+function setSidebarCollapsed(on, persist) {
+  document.body.classList.toggle('sidebar-collapsed', on);
+  if (els.collapseBtn) els.collapseBtn.title = on ? 'Expand sidebar' : 'Collapse sidebar';
+  if (persist !== false) { try { localStorage.setItem(SIDEBAR_KEY, on ? '1' : '0'); } catch (e) {} }
+}
+function toggleSidebar() { setSidebarCollapsed(!document.body.classList.contains('sidebar-collapsed')); }
+try { if (localStorage.getItem(SIDEBAR_KEY) === '1') setSidebarCollapsed(true, false); } catch (e) {}
+
 /* ---------- Events ---------- */
 els.connect.addEventListener('click', connect);
 if (els.connectLocal) els.connectLocal.addEventListener('click', connectLocal);
 els.keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
 els.disconnect.addEventListener('click', disconnect);
 els.newChat.addEventListener('click', () => { newConversation(); closeDrawer(); });
-els.menuBtn.addEventListener('click', openDrawer);
+// On desktop the ☰ (revealed only when collapsed) re-expands the sidebar; on
+// phones it opens the drawer as before.
+els.menuBtn.addEventListener('click', () => { if (desktopMq.matches) toggleSidebar(); else openDrawer(); });
+if (els.collapseBtn) els.collapseBtn.addEventListener('click', toggleSidebar);
 els.scrim.addEventListener('click', closeDrawer);
 els.model.addEventListener('change', () => {
   if (!current) return;

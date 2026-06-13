@@ -241,9 +241,23 @@ body.drawer-open #scrim { opacity: 1; pointer-events: auto; }
   -webkit-backdrop-filter: blur(22px) saturate(140%); backdrop-filter: blur(22px) saturate(140%);
   display: flex; flex-direction: column;
   padding-top: env(safe-area-inset-top);
+  transition: flex-basis .2s ease, width .2s ease;
 }
 .side-head { padding: 18px 16px 12px; display: flex; flex-direction: column; gap: 14px; }
+.side-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .side-head .wordmark { height: 15px; }
+.side-collapse { width: 30px; height: 30px; font-size: 18px; flex-shrink: 0; }
+
+/* Desktop: collapse the sidebar to reclaim chat width (persisted). On phones the
+   sidebar is a drawer instead, so the collapse button is hidden there. */
+@media (min-width: 761px) {
+  body.sidebar-collapsed #sidebar {
+    flex-basis: 0; width: 0; min-width: 0; border-right: none;
+    overflow: hidden; pointer-events: none;
+  }
+  body.sidebar-collapsed #menuBtn { display: grid; }
+}
+@media (max-width: 760px) { .desk-only { display: none !important; } }
 .side-new {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   background: var(--accent-soft); color: var(--accent); border: 0.5px solid rgba(97,121,255,0.2);
