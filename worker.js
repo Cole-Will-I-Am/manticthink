@@ -142,7 +142,10 @@ async function handleChat(request, env) {
   // may add any model the backend offers). The backend validates the name and
   // the visitor's key — no server-side whitelist. Fall back to the default
   // only when no model was supplied.
-  const requested = typeof body.model === "string" ? body.model.trim() : "";
+  // Normalize a trailing ":cloud" tag: that suffix is only meaningful to a local
+  // Ollama daemon (CLI passthrough). ollama.com's hosted API uses bare names and
+  // has no ":cloud" variants, so an unstripped suffix → unknown model → 500/502.
+  const requested = (typeof body.model === "string" ? body.model.trim() : "").replace(/:cloud$/, "");
   const model = requested || env.DEFAULT_MODEL || modelList(env)[0];
   const options = sanitizeOptions(body.options);
   const tools = Array.isArray(body.tools) && body.tools.length ? body.tools : undefined;
@@ -174,7 +177,8 @@ async function handleChat(request, env) {
   if (!upstream.ok || !upstream.body) {
     track(env, "chat_backend_error", String(upstream.status), model);
     const detail = await upstream.text().catch(() => "");
-    return json({ error: `Backend error (${upstream.status}).`, detail: detail.slice(0, 300) }, 502);
+    const hint = upstream.status >= 500 ? ` The model "${model}" may not be available on your account.` : "";
+    return json({ error: `Backend error (${upstream.status}).${hint}`, detail: detail.slice(0, 300) }, 502);
   }
   track(env, "chat_success", "", model);
 
