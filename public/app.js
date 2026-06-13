@@ -70,6 +70,7 @@ const els = {
   dbSave: $('dbSave'), dbSavedBtn: $('dbSavedBtn'), dbSaved: $('dbSaved'),
   dbSynth: $('dbSynth'), dbShare: $('dbShare'),
   dbCard: $('dbCard'), dbHead: $('dbHead'), dbCta: $('dbCta'), dbCtaStart: $('dbCtaStart'), dbCtaCopy: $('dbCtaCopy'),
+  dbPair: $('dbPair'), dbRoles: $('dbRoles'), dbRolesWrap: $('dbRolesWrap'), dbSeats: $('dbSeats'),
   scaffoldModal: $('scaffoldModal'), scClose: $('scClose'), scSearch: $('scSearch'),
   scNew: $('scNew'), scList: $('scList'), scTemplates: $('scTemplates'),
   scaffoldBuilder: $('scaffoldBuilder'), sbTitle: $('sbTitle'), sbClose: $('sbClose'), sbErrors: $('sbErrors'),
@@ -2168,6 +2169,7 @@ function openDebate() {
   exitSharedView();
   els.dbCard.classList.remove('db-active');
   fillDebateModels();
+  applyDebateMode();
   els.dbStop.classList.add('hidden');
   els.dbSave.classList.add('hidden');
   els.dbShare.classList.add('hidden');
@@ -2190,8 +2192,8 @@ function saveCurrentDebate() {
   const rec = {
     id: uid(),
     topic: currentDebate.topic,
-    modelA: currentDebate.modelA, modelB: currentDebate.modelB,
-    mode: currentDebate.mode, labels: currentDebate.labels,
+    mode: currentDebate.mode,
+    participants: recordParticipants(currentDebate),
     transcript: currentDebate.transcript,
     savedAt: Date.now(),
   };
@@ -2223,7 +2225,8 @@ function renderSavedDebates() {
     const topic = document.createElement('div'); topic.className = 'db-saved-topic'; topic.textContent = rec.topic;
     const meta = document.createElement('div'); meta.className = 'db-saved-meta';
     const when = new Date(rec.savedAt);
-    meta.textContent = `${rec.modelA} vs ${rec.modelB} · ${rec.mode === 'debate' ? 'Debate' : 'Discussion'} · ${when.toLocaleDateString()}`;
+    const models = recordParticipants(rec).map((p) => p.model);
+    meta.textContent = `${models.join(' · ')} · ${debateModeLabel(rec.mode)} · ${when.toLocaleDateString()}`;
     main.append(topic, meta);
     main.addEventListener('click', () => loadDebateRecord(rec));
     const share = document.createElement('button'); share.className = 'db-saved-del'; share.type = 'button'; share.textContent = '↗'; share.title = 'Copy share link';
@@ -2239,20 +2242,17 @@ function renderSavedDebates() {
 }
 
 function loadDebateRecord(rec) {
-  // Restore setup fields (best-effort — model may no longer be in the list).
   els.dbTopic.value = rec.topic;
-  if ([...els.dbModelA.options].some((o) => o.value === rec.modelA)) els.dbModelA.value = rec.modelA;
-  if ([...els.dbModelB.options].some((o) => o.value === rec.modelB)) els.dbModelB.value = rec.modelB;
-  els.dbMode.value = rec.mode;
+  if (['debate', 'discuss', 'roundtable'].includes(rec.mode)) els.dbMode.value = rec.mode;
+  const participants = recordParticipants(rec);
   // Render the saved transcript into the feed (read-only review).
   els.dbFeed.innerHTML = '';
-  const labels = rec.labels || (rec.mode === 'debate' ? { A: 'Proponent', B: 'Opponent' } : { A: 'Analyst A', B: 'Analyst B' });
-  addDebateHeader(rec.topic, rec.modelA, rec.modelB, labels);
+  addDebateHeader(rec.topic, participants, rec.mode);
   for (const t of rec.transcript) {
     const node = addDebateTurn(t.label, t.model, t.side);
     node.finalize(t.text);
   }
-  currentDebate = { topic: rec.topic, modelA: rec.modelA, modelB: rec.modelB, mode: rec.mode, labels, rounds: 0, transcript: rec.transcript };
+  currentDebate = { topic: rec.topic, mode: rec.mode, participants, rounds: 0, transcript: rec.transcript };
   els.dbSave.classList.add('hidden');   // already saved
   els.dbShare.classList.remove('hidden');
   hideSavedPanel();
@@ -2261,7 +2261,8 @@ function loadDebateRecord(rec) {
 // Share links encode the whole debate in the URL hash (no server storage),
 // consistent with the site's browser-only data model.
 function encodeDebate(rec) {
-  const slim = { t: rec.topic, a: rec.modelA, b: rec.modelB, m: rec.mode, l: rec.labels,
+  const parts = recordParticipants(rec);
+  const slim = { t: rec.topic, m: rec.mode, p: parts.map((p) => ({ m: p.model, l: p.label, s: p.side })),
     x: (rec.transcript || []).map((tr) => ({ s: tr.side, l: tr.label, m: tr.model, x: tr.text })) };
   const json = JSON.stringify(slim);
   return btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -2271,7 +2272,10 @@ function decodeDebate(str) {
     const b64 = str.replace(/-/g, '+').replace(/_/g, '/');
     const s = JSON.parse(decodeURIComponent(escape(atob(b64))));
     if (!s || !Array.isArray(s.x)) return null;
-    return { topic: s.t || '', modelA: s.a || '', modelB: s.b || '', mode: s.m || 'debate', labels: s.l,
+    const participants = Array.isArray(s.p)
+      ? s.p.map((p) => ({ model: p.m, label: p.l, side: p.s }))
+      : (s.a && s.b ? [{ model: s.a, label: (s.l && s.l.A) || 'Proponent', side: 'A' }, { model: s.b, label: (s.l && s.l.B) || 'Opponent', side: 'B' }] : []);
+    return { topic: s.t || '', mode: s.m || 'debate', participants,
       transcript: s.x.map((tr) => ({ side: tr.s, label: tr.l, model: tr.m, text: tr.x })) };
   } catch (e) { return null; }
 }
@@ -2282,7 +2286,7 @@ async function shareDebate(rec, btn) {
   let url = null;
   try {
     const slim = {
-      topic: rec.topic, modelA: rec.modelA, modelB: rec.modelB, mode: rec.mode, labels: rec.labels,
+      topic: rec.topic, mode: rec.mode, participants: recordParticipants(rec),
       transcript: rec.transcript.map((t) => ({ side: t.side, label: t.label, model: t.model, text: t.text })),
     };
     const resp = await fetch('/api/debate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(slim) });
@@ -2336,41 +2340,148 @@ function fillDebateModels() {
   if (els.dbModelB.options.length > 1 && els.dbModelA.value === els.dbModelB.value) els.dbModelB.selectedIndex = 1;
 }
 
-function debatePersona(mode, side, topic) {
+/* ---- Round table seats (2–4 models) ---- */
+const MAX_SEATS = 4;
+let seatModels = [];   // model name per seat
+let seatRoles = [];    // optional perspective per seat
+
+function debateModelList() {
+  return [...els.model.options].filter((o) => !o.value.startsWith('preset:') && o.value).map((o) => o.value);
+}
+function ensureSeatDefaults() {
+  const models = debateModelList();
+  if (seatModels.length < 2) {
+    seatModels = [models[0] || '', models[1] || models[0] || ''];
+    seatRoles = ['', ''];
+  }
+  seatModels = seatModels.map((m) => (models.includes(m) ? m : (models[0] || '')));
+}
+function renderSeats() {
+  const models = debateModelList();
+  const rolesOn = els.dbRoles.checked;
+  els.dbSeats.innerHTML = '';
+  seatModels.forEach((m, i) => {
+    const row = document.createElement('div'); row.className = 'db-seat-row';
+    const num = document.createElement('span'); num.className = 'db-seat-num'; num.textContent = 'Seat ' + (i + 1);
+    const sel = document.createElement('select'); sel.className = 'db-sel';
+    for (const name of models) { const o = document.createElement('option'); o.value = name; o.textContent = name; sel.appendChild(o); }
+    sel.value = m || (models[0] || '');
+    sel.addEventListener('change', () => { seatModels[i] = sel.value; });
+    row.append(num, sel);
+    if (rolesOn) {
+      const role = document.createElement('input'); role.className = 'db-seat-role'; role.type = 'text';
+      role.placeholder = 'Perspective (optional)'; role.value = seatRoles[i] || '';
+      role.addEventListener('input', () => { seatRoles[i] = role.value; });
+      row.append(role);
+    }
+    if (seatModels.length > 2) {
+      const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'db-seat-rm'; rm.textContent = '✕'; rm.title = 'Remove seat';
+      rm.addEventListener('click', () => { seatModels.splice(i, 1); seatRoles.splice(i, 1); renderSeats(); });
+      row.append(rm);
+    }
+    els.dbSeats.appendChild(row);
+  });
+  if (seatModels.length < MAX_SEATS) {
+    const add = document.createElement('button'); add.type = 'button'; add.className = 'db-seat-add'; add.textContent = '+ Add seat';
+    add.addEventListener('click', () => {
+      if (seatModels.length >= MAX_SEATS) return;
+      const ms = debateModelList();
+      seatModels.push(ms[seatModels.length % Math.max(ms.length, 1)] || ms[0] || '');
+      seatRoles.push('');
+      renderSeats();
+    });
+    els.dbSeats.appendChild(add);
+  }
+}
+function applyDebateMode() {
+  const rt = els.dbMode.value === 'roundtable';
+  els.dbPair.classList.toggle('hidden', rt);
+  els.dbSeats.classList.toggle('hidden', !rt);
+  els.dbRolesWrap.classList.toggle('hidden', !rt);
+  if (rt) { ensureSeatDefaults(); renderSeats(); }
+}
+
+/// The active list of debaters from the setup UI: [{model, label, side}].
+function debateParticipants() {
+  const mode = els.dbMode.value;
+  if (mode === 'roundtable') {
+    const rolesOn = els.dbRoles.checked;
+    return seatModels.map((m, i) => ({
+      model: m,
+      label: (rolesOn && (seatRoles[i] || '').trim()) ? seatRoles[i].trim() : 'Seat ' + (i + 1),
+      side: String(i),
+    }));
+  }
+  const a = els.dbModelA.value, b = els.dbModelB.value;
+  return mode === 'debate'
+    ? [{ model: a, label: 'Proponent', side: 'A' }, { model: b, label: 'Opponent', side: 'B' }]
+    : [{ model: a, label: 'Analyst A', side: 'A' }, { model: b, label: 'Analyst B', side: 'B' }];
+}
+
+/// Participants for a saved/shared record (new `participants`, or derived from
+/// legacy modelA/modelB, or as a last resort from the transcript).
+function recordParticipants(rec) {
+  if (Array.isArray(rec.participants) && rec.participants.length) return rec.participants;
+  if (rec.modelA && rec.modelB) {
+    const labels = rec.labels || (rec.mode === 'debate' ? { A: 'Proponent', B: 'Opponent' } : { A: 'Analyst A', B: 'Analyst B' });
+    return [{ model: rec.modelA, label: labels.A, side: 'A' }, { model: rec.modelB, label: labels.B, side: 'B' }];
+  }
+  const seen = {}; const out = [];
+  for (const t of (rec.transcript || [])) {
+    if (t.side === 'S' || seen[t.side]) continue;
+    seen[t.side] = true; out.push({ model: t.model, label: t.label, side: t.side });
+  }
+  return out;
+}
+function debateModeLabel(mode) {
+  return mode === 'debate' ? 'Debate' : mode === 'discuss' ? 'Discussion' : 'Round table';
+}
+
+function participantPersona(mode, p, n, topic) {
   if (mode === 'debate') {
-    const role = side === 'A'
+    const role = p.side === 'A'
       ? 'the PROPONENT, arguing IN FAVOR of the proposition'
       : 'the OPPONENT, arguing AGAINST the proposition';
     return `You are ${role} in a structured debate. Topic: "${topic}". Make your strongest case, directly rebut the other side's most recent points, and stay strictly on topic. Be substantive but concise: under 150 words. Do not restate your role, narrate stage directions, or prefix your name — just give the argument in plain persuasive prose.`;
   }
-  const who = side === 'A' ? 'Analyst A' : 'Analyst B';
-  return `You are ${who}, one of two thoughtful analysts discussing a question together. Topic: "${topic}". Build on or respectfully challenge the other analyst's most recent points, add fresh angles, and avoid repeating what's already been said. Be concise: under 150 words. Do not prefix your name or narrate stage directions.`;
+  if (mode === 'discuss') {
+    return `You are ${p.label}, one of two thoughtful analysts discussing a question together. Topic: "${topic}". Build on or respectfully challenge the other analyst's most recent points, add fresh angles, and avoid repeating what's already been said. Be concise: under 150 words. Do not prefix your name or narrate stage directions.`;
+  }
+  // round table
+  const hasRole = !/^Seat \d+$/.test(p.label);
+  const roleLine = hasRole ? ` Argue from your assigned perspective as "${p.label}".` : '';
+  return `You are ${p.label}, one of ${n} participants at a round-table discussion. Topic: "${topic}".${roleLine} Engage directly with the most recent points from the other participants, add a fresh angle, and avoid repeating what's already been said. Be concise: under 150 words. Do not prefix your name or narrate stage directions.`;
 }
 function debateUserPrompt(topic, transcript, label, mode) {
   if (!transcript.length) {
-    return mode === 'debate'
-      ? `The debate topic is: "${topic}". Open with your position as the ${label}.`
-      : `The question is: "${topic}". Open the discussion with your initial take as ${label}.`;
+    if (mode === 'debate') return `The debate topic is: "${topic}". Open with your position as the ${label}.`;
+    if (mode === 'discuss') return `The question is: "${topic}". Open the discussion with your initial take as ${label}.`;
+    return `The round-table topic is: "${topic}". Open with your initial take as ${label}.`;
   }
   const lines = transcript.map((t) => `[${t.label}]: ${t.text}`).join('\n\n');
-  return `Topic: "${topic}"\n\nConversation so far:\n${lines}\n\nIt is now your turn as ${label}. Respond directly to the most recent point.`;
+  return `Topic: "${topic}"\n\nConversation so far:\n${lines}\n\nIt is now your turn as ${label}. Respond directly to the most recent points.`;
 }
 function synthesisPersona(mode, topic) {
   if (mode === 'debate') {
     return `You are an impartial moderator closing a debate on: "${topic}". Read the full transcript and write a brief, neutral synthesis: the single strongest point from each side, any genuine common ground, and a balanced judgment of which case was more persuasive and why. Be fair to both sides. Under 180 words. Do not prefix your name or narrate stage directions.`;
   }
-  return `You are synthesizing a discussion on: "${topic}". Read the full transcript and summarize the key insights, where the analysts agreed and differed, and the most important takeaway. Neutral and concise — under 180 words. Do not prefix your name.`;
+  if (mode === 'discuss') {
+    return `You are synthesizing a discussion on: "${topic}". Read the full transcript and summarize the key insights, where the analysts agreed and differed, and the most important takeaway. Neutral and concise — under 180 words. Do not prefix your name.`;
+  }
+  return `You are an impartial moderator closing a round-table discussion on: "${topic}". Read the full transcript and write a brief, neutral synthesis: each participant's strongest contribution, where they converged and diverged, and the key takeaway. Be fair to all. Under 200 words. Do not prefix your name.`;
 }
 function synthesisUserPrompt(topic, transcript, mode) {
   const lines = transcript.map((t) => `[${t.label}]: ${t.text}`).join('\n\n');
-  return `Topic: "${topic}"\n\nFull transcript:\n${lines}\n\nNow write the closing ${mode === 'debate' ? 'synthesis and verdict' : 'synthesis'}.`;
+  const kind = mode === 'debate' ? 'synthesis and verdict' : (mode === 'roundtable' ? 'round-table synthesis' : 'synthesis');
+  return `Topic: "${topic}"\n\nFull transcript:\n${lines}\n\nNow write the closing ${kind}.`;
 }
 
-function addDebateHeader(topic, modelA, modelB, labels) {
+function addDebateHeader(topic, participants, mode) {
   const h = document.createElement('div'); h.className = 'db-topic';
   const q = document.createElement('div'); q.className = 'db-q'; q.textContent = topic;
   const vs = document.createElement('div'); vs.className = 'db-vs';
-  vs.textContent = `${labels.A} · ${modelA}    vs    ${labels.B} · ${modelB}`;
+  const sep = (participants.length === 2 && mode !== 'roundtable') ? '    vs    ' : '    ·    ';
+  vs.textContent = participants.map((p) => `${p.label} · ${p.model}`).join(sep);
   h.append(q, vs); els.dbFeed.appendChild(h);
 }
 function addDebateTurn(label, model, side) {
@@ -2423,11 +2534,10 @@ async function runDebate() {
   if (debateRunning) return;
   const topic = els.dbTopic.value.trim();
   if (!topic) { els.dbTopic.focus(); return; }
-  const modelA = els.dbModelA.value, modelB = els.dbModelB.value;
-  if (!modelA || !modelB) { showErr('Pick two models for the debate.'); return; }
   const mode = els.dbMode.value;
-  const rounds = Math.max(1, Math.min(4, parseInt(els.dbRounds.value, 10) || 2));
-  const labels = mode === 'debate' ? { A: 'Proponent', B: 'Opponent' } : { A: 'Analyst A', B: 'Analyst B' };
+  const participants = debateParticipants();
+  if (participants.length < 2 || participants.some((p) => !p.model)) { showErr('Pick a model for every seat.'); return; }
+  const rounds = Math.max(1, Math.min(6, parseInt(els.dbRounds.value, 10) || 2));
 
   debateRunning = true;
   els.dbCard.classList.add('db-active');
@@ -2439,38 +2549,38 @@ async function runDebate() {
   hideSavedPanel();
   els.dbFeed.innerHTML = '';
   debateController = new AbortController();
-  addDebateHeader(topic, modelA, modelB, labels);
+  addDebateHeader(topic, participants, mode);
 
   const transcript = [];
-  currentDebate = { topic, modelA, modelB, mode, labels, rounds, transcript };
+  currentDebate = { topic, mode, participants, rounds, transcript };
   try {
     outer:
     for (let r = 0; r < rounds; r++) {
-      for (const side of ['A', 'B']) {
-        const model = side === 'A' ? modelA : modelB;
-        const node = addDebateTurn(labels[side], model, side);
+      for (const p of participants) {
+        const node = addDebateTurn(p.label, p.model, p.side);
         const text = await streamDebateTurn(
-          model,
-          debatePersona(mode, side, topic),
-          debateUserPrompt(topic, transcript, labels[side], mode),
+          p.model,
+          participantPersona(mode, p, participants.length, topic),
+          debateUserPrompt(topic, transcript, p.label, mode),
           node,
           debateController.signal
         );
-        transcript.push({ side, label: labels[side], model, text });
+        transcript.push({ side: p.side, label: p.label, model: p.model, text });
         if (debateController.signal.aborted) break outer;
       }
     }
     // Optional closing synthesis from an impartial moderator (uses the first model).
     if (els.dbSynth.checked && !debateController.signal.aborted && transcript.length) {
-      const node = addDebateTurn('Synthesis', modelA, 'S');
+      const synthModel = participants[0].model;
+      const node = addDebateTurn('Synthesis', synthModel, 'S');
       const text = await streamDebateTurn(
-        modelA,
+        synthModel,
         synthesisPersona(mode, topic),
         synthesisUserPrompt(topic, transcript, mode),
         node,
         debateController.signal
       );
-      transcript.push({ side: 'S', label: 'Synthesis', model: modelA, text });
+      transcript.push({ side: 'S', label: 'Synthesis', model: synthModel, text });
     }
   } catch (e) {
     if (e.name !== 'AbortError') {
@@ -2508,6 +2618,8 @@ els.dbShare.addEventListener('click', () => shareDebate(currentDebate, els.dbSha
 els.dbSavedBtn.addEventListener('click', toggleSavedPanel);
 els.dbCtaStart.addEventListener('click', startOwnFromShared);
 els.dbCtaCopy.addEventListener('click', () => shareDebate(currentDebate, els.dbCtaCopy));
+els.dbMode.addEventListener('change', applyDebateMode);
+els.dbRoles.addEventListener('change', renderSeats);
 els.model.addEventListener('change', () => {
   if (!current) return;
   const v = els.model.value;

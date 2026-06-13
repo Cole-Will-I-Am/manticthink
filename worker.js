@@ -271,11 +271,14 @@ async function handleDebateGet(env, id) {
 // escapes the values, so a user-supplied topic is safe to inject.
 function debateMeta(rec, pageUrl) {
   const topic = String(rec.topic || "AI Debate").replace(/\s+/g, " ").trim().slice(0, 140) || "AI Debate";
-  const a = rec.modelA || "Model A", b = rec.modelB || "Model B";
-  const verb = rec.mode === "discuss" ? "discuss" : "debate";
+  const models = Array.isArray(rec.participants) && rec.participants.length
+    ? rec.participants.map((p) => p && p.model).filter(Boolean)
+    : [rec.modelA, rec.modelB].filter(Boolean);
+  const matchup = models.length ? models.join(" vs ") : "two models";
+  const verb = rec.mode === "roundtable" ? "discuss" : (rec.mode === "discuss" ? "discuss" : "debate");
   return {
     title: ("AI Debate: " + topic).slice(0, 180),
-    desc: (`${a} vs ${b} ${verb} this on Mantic Think — read the full exchange, then start your own free AI debate.`).slice(0, 240),
+    desc: (`${matchup} ${verb} this on Mantic Think — read the full exchange, then start your own free AI debate.`).slice(0, 240),
     url: pageUrl,
   };
 }

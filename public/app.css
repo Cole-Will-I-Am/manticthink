@@ -525,11 +525,27 @@ select#model {
 .db-q { color: var(--text-primary); font-size: 14px; font-weight: 500; }
 .db-vs { color: var(--text-tertiary); font-size: 11px; margin-top: 5px; letter-spacing: 0.02em; }
 .db-turn { border-left: 2px solid var(--border-light); padding-left: 12px; }
-.db-turn.db-A { border-left-color: var(--accent); }
-.db-turn.db-B { border-left-color: #c98a5e; }
+.db-turn.db-A, .db-turn.db-0 { border-left-color: var(--accent); }
+.db-turn.db-B, .db-turn.db-1 { border-left-color: #c98a5e; }
+.db-turn.db-2 { border-left-color: #4fb3a6; }
+.db-turn.db-3 { border-left-color: #b07bd4; }
 .db-speaker { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px; }
-.db-turn.db-A .db-speaker { color: var(--accent); }
-.db-turn.db-B .db-speaker { color: #d49a6e; }
+.db-turn.db-A .db-speaker, .db-turn.db-0 .db-speaker { color: var(--accent); }
+.db-turn.db-B .db-speaker, .db-turn.db-1 .db-speaker { color: #d49a6e; }
+.db-turn.db-2 .db-speaker { color: #5fc9bb; }
+.db-turn.db-3 .db-speaker { color: #c294e0; }
+.db-pair { display: inline-flex; align-items: center; gap: 8px; }
+.db-seats { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 2px; }
+.db-seat-row { display: flex; align-items: center; gap: 8px; }
+.db-seat-row .db-sel { max-width: none; flex: 1; }
+.db-seat-role { background: var(--bg-secondary); color: var(--text-primary); border: 0.5px solid var(--border-light); border-radius: 999px; padding: 7px 12px; font-family: var(--font); font-size: 12px; max-width: 180px; }
+.db-seat-role:focus { border-color: rgba(97,121,255,0.4); outline: none; }
+.db-seat-num { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); width: 46px; flex-shrink: 0; }
+.db-seat-rm { background: none; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 13px; padding: 4px 6px; flex-shrink: 0; }
+.db-seat-rm:hover { color: var(--danger); }
+.db-seat-add { align-self: flex-start; background: var(--surface); color: var(--text-secondary); border: 0.5px dashed var(--border-light); border-radius: 999px; padding: 6px 14px; font-size: 12px; cursor: pointer; font-family: var(--font); }
+.db-seat-add:hover { color: var(--accent); border-color: var(--accent); }
+.db-seat-add:disabled { opacity: 0.4; cursor: default; }
 .db-turn.db-S { border-left-color: #5ec98a; background: rgba(94,201,138,0.05); border-radius: 0 10px 10px 0; padding: 4px 12px 8px; }
 .db-turn.db-S .db-speaker { color: #6fcf97; }
 .db-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }

@@ -502,26 +502,33 @@
       <div class="db-setup">
         <textarea id="dbTopic" class="set-textarea" rows="2" placeholder="A question or proposition to debate — e.g. “Should cities ban cars from downtown cores?”"></textarea>
         <div class="db-controls">
-          <select id="dbModelA" class="db-sel" title="First model"></select>
-          <span class="db-vs-lbl">vs</span>
-          <select id="dbModelB" class="db-sel" title="Second model"></select>
+          <span id="dbPair" class="db-pair">
+            <select id="dbModelA" class="db-sel" title="First model"></select>
+            <span class="db-vs-lbl">vs</span>
+            <select id="dbModelB" class="db-sel" title="Second model"></select>
+          </span>
           <select id="dbMode" class="db-sel" title="Format">
             <option value="debate">Debate (for vs against)</option>
             <option value="discuss">Discussion (two perspectives)</option>
+            <option value="roundtable">Round table (2–4 models)</option>
           </select>
           <select id="dbRounds" class="db-sel" title="Rounds each">
             <option value="1">1 round each</option>
             <option value="2" selected>2 rounds each</option>
             <option value="3">3 rounds each</option>
             <option value="4">4 rounds each</option>
+            <option value="5">5 rounds each</option>
+            <option value="6">6 rounds each</option>
           </select>
           <label class="db-check" title="End with an impartial closing synthesis"><input type="checkbox" id="dbSynth" checked /> Synthesis</label>
+          <label id="dbRolesWrap" class="db-check hidden" title="Give each seat an assigned perspective"><input type="checkbox" id="dbRoles" /> Perspectives</label>
           <button id="dbStart" class="mm-add-btn" type="button">Start debate</button>
           <button id="dbStop" class="mm-add-btn db-stop hidden" type="button">Stop</button>
           <button id="dbSave" class="mm-add-btn db-ghost hidden" type="button">★ Save</button>
           <button id="dbShare" class="mm-add-btn db-ghost hidden" type="button">Share</button>
           <button id="dbSavedBtn" class="mm-add-btn db-ghost" type="button">Saved</button>
         </div>
+        <div id="dbSeats" class="db-seats hidden"></div>
       </div>
       <div id="dbFeed" class="db-feed"></div>
       <div id="dbSaved" class="db-saved hidden"></div>
