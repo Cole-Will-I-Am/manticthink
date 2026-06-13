@@ -14,6 +14,12 @@ binding = "ASSETS"
 binding = "AE"
 dataset = "manticthink_events"
 
+# Stores debates that users explicitly Share (so /d/<id> short links work).
+# Only shared-debate content lands here — never API keys or other chats.
+[[kv_namespaces]]
+binding = "DEBATES"
+id = "23843e5a2c7f425ba9274ee811c90827"
+
 # Non-secret config (edit freely, then redeploy). The model list shows in the
 # picker; set these to the Ollama models you actually have access to.
 [vars]

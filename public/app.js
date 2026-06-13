@@ -2276,11 +2276,25 @@ function decodeDebate(str) {
 }
 async function shareDebate(rec, btn) {
   if (!rec || !rec.transcript || !rec.transcript.length) return;
-  const url = location.origin + '/#debate=' + encodeDebate(rec);
-  let ok = true;
-  try { await navigator.clipboard.writeText(url); } catch (e) { ok = false; }
-  if (!ok) { window.prompt('Copy this debate link:', url); return; }
-  if (btn) { const t = btn.textContent; btn.textContent = 'Link copied ✓'; setTimeout(() => { btn.textContent = t; }, 1400); }
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.textContent = 'Creating link…'; btn.disabled = true; }
+  let url = null;
+  try {
+    const slim = {
+      topic: rec.topic, modelA: rec.modelA, modelB: rec.modelB, mode: rec.mode, labels: rec.labels,
+      transcript: rec.transcript.map((t) => ({ side: t.side, label: t.label, model: t.model, text: t.text })),
+    };
+    const resp = await fetch('/api/debate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(slim) });
+    const d = await resp.json().catch(() => ({}));
+    if (resp.ok && d.id) url = location.origin + '/d/' + d.id;
+  } catch (e) {}
+  // Fall back to a self-contained hash link if the server short link failed.
+  if (!url) url = location.origin + '/#debate=' + encodeDebate(rec);
+  if (btn) btn.disabled = false;
+  let copied = true;
+  try { await navigator.clipboard.writeText(url); } catch (e) { copied = false; }
+  if (!copied) { if (btn && orig) btn.textContent = orig; window.prompt('Copy this debate link:', url); return; }
+  if (btn) { btn.textContent = 'Link copied ✓'; setTimeout(() => { if (orig) btn.textContent = orig; }, 1400); }
 }
 function openSharedDebate(rec) {
   fillDebateModels();
@@ -2290,11 +2304,22 @@ function openSharedDebate(rec) {
   // Plain read-only presentation for (possibly non-user) visitors, with a CTA.
   enterSharedView();
 }
-function maybeOpenSharedDebate() {
-  const m = (location.hash || '').match(/[#&]debate=([^&]+)/);
-  if (!m) return;
-  const rec = decodeDebate(m[1]);
-  // Drop the hash so a later reload or page-share doesn't re-trigger.
+async function maybeOpenSharedDebate() {
+  // New: /d/<id> short links resolve from the server.
+  const path = location.pathname.match(/^\/d\/([A-Za-z0-9_-]+)$/);
+  if (path) {
+    try {
+      const resp = await fetch('/api/debate/' + encodeURIComponent(path[1]));
+      const rec = await resp.json().catch(() => null);
+      try { history.replaceState(null, '', '/'); } catch (e) {}
+      if (resp.ok && rec && Array.isArray(rec.transcript) && rec.transcript.length) openSharedDebate(rec);
+    } catch (e) {}
+    return;
+  }
+  // Legacy: self-contained #debate=<base64> links.
+  const h = (location.hash || '').match(/[#&]debate=([^&]+)/);
+  if (!h) return;
+  const rec = decodeDebate(h[1]);
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   if (rec && rec.transcript.length) openSharedDebate(rec);
 }

@@ -28,7 +28,7 @@
 {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
 {"@type":"Question","name":"What is SƎER?","acceptedAnswer":{"@type":"Answer","text":"SƎER is a free, private web UI for Ollama models. Chat with Ollama Cloud models using your own API key, or connect it to the Ollama instance running on your own machine — streaming replies, charts, in-browser code execution, and GitHub context included."}},
 {"@type":"Question","name":"Do I need an account?","acceptedAnswer":{"@type":"Answer","text":"No account and no signup. Paste your own Ollama API key, or use local mode with the Ollama on your computer — no key needed at all."}},
-{"@type":"Question","name":"Where are my conversations stored?","acceptedAnswer":{"@type":"Answer","text":"Only in your browser. Our server never stores your messages or your API key — in cloud mode it relays requests to Ollama without logging them, and in local mode requests never reach our servers at all."}},
+{"@type":"Question","name":"Where are my conversations stored?","acceptedAnswer":{"@type":"Answer","text":"Only in your browser. Our server never stores your messages or your API key — in cloud mode it relays requests to Ollama without logging them, and in local mode requests never reach our servers at all. The one exception is the AI Debate feature: if you tap Share on a debate, that debate's content is saved on our servers so the short link works for others — only the debate you explicitly share, never your key or other chats."}},
 {"@type":"Question","name":"Can I chat with models running on my own computer?","acceptedAnswer":{"@type":"Answer","text":"Yes. Choose 'Use local Ollama' and SƎER connects your browser directly to your local Ollama instance — a zero-install web UI for local LLMs. Start Ollama with OLLAMA_ORIGINS=https://manticthink.com to allow it."}},
 {"@type":"Question","name":"Which models can I use?","acceptedAnswer":{"@type":"Answer","text":"Any model your Ollama key or local instance offers — gpt-oss, Qwen, DeepSeek, Llama, and more. You curate your own model list in the picker."}}
 ]}
@@ -90,7 +90,7 @@
       </details>
       <details>
         <summary>Where are my conversations stored?</summary>
-        <p>Only in your browser. Our server never stores your messages or your key — and in local mode, requests never reach our servers at all. See the <a href="/privacy">privacy policy</a>.</p>
+        <p>Only in your browser. Our server never stores your messages or your key — and in local mode, requests never reach our servers at all. The one exception: if you tap <b>Share</b> on an AI Debate, that debate is saved on our servers so the short link works for others — only what you explicitly share. See the <a href="/privacy">privacy policy</a>.</p>
       </details>
       <details>
         <summary>Can I chat with models on my own computer?</summary>

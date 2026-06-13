@@ -232,6 +232,41 @@ async function handleFetch(request, env) {
   }
 }
 
+// ---- Shared debates (KV-backed short links) ----
+function debateShortId() {
+  const bytes = new Uint8Array(7);
+  crypto.getRandomValues(bytes);
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+  let s = "";
+  for (const b of bytes) s += alphabet[b % 36];
+  return s;
+}
+
+// Store a debate the user explicitly shared. Validated + size-capped so this
+// can't be used as a general-purpose data store.
+async function handleDebateStore(request, env) {
+  if (!env.DEBATES) return json({ error: "Sharing is not configured." }, 503);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Invalid JSON body." }, 400); }
+  if (!body || typeof body.topic !== "string" || !Array.isArray(body.transcript) || !body.transcript.length) {
+    return json({ error: "Invalid debate." }, 400);
+  }
+  const payload = JSON.stringify(body);
+  if (payload.length > 200000) return json({ error: "Debate too large to share." }, 413);
+  let id = debateShortId();
+  if (await env.DEBATES.get(id)) id = debateShortId() + debateShortId().slice(0, 2);
+  await env.DEBATES.put(id, payload, { expirationTtl: 60 * 60 * 24 * 365 });
+  track(env, "debate_share", "store");
+  return json({ id }, 200);
+}
+
+async function handleDebateGet(env, id) {
+  if (!env.DEBATES || !/^[a-z0-9]{5,18}$/.test(id)) return json({ error: "Not found." }, 404);
+  const val = await env.DEBATES.get(id);
+  if (!val) return json({ error: "This shared debate was not found or has expired." }, 404);
+  return new Response(val, { status: 200, headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -251,6 +286,22 @@ export default {
     if (url.pathname === "/api/chat") {
       if (request.method !== "POST") return json({ error: "Use POST." }, 405);
       return handleChat(request, env);
+    }
+    if (url.pathname === "/api/debate") {
+      if (request.method !== "POST") return json({ error: "Use POST." }, 405);
+      return handleDebateStore(request, env);
+    }
+    if (url.pathname.startsWith("/api/debate/")) {
+      if (request.method !== "GET") return json({ error: "Use GET." }, 405);
+      return handleDebateGet(env, decodeURIComponent(url.pathname.slice("/api/debate/".length)));
+    }
+    // Short debate share links — serve the SPA so the client can load + render it.
+    if (/^\/d\/[A-Za-z0-9_-]+$/.test(url.pathname)) {
+      const spa = await env.ASSETS.fetch(new Request(new URL("/", url)));
+      const sh = new Headers(spa.headers);
+      sh.set("Cross-Origin-Opener-Policy", "same-origin");
+      sh.set("Cross-Origin-Embedder-Policy", "require-corp");
+      return new Response(spa.body, { status: spa.status, statusText: spa.statusText, headers: sh });
     }
     const assetRes = await env.ASSETS.fetch(request);
     const h = new Headers(assetRes.headers);
