@@ -323,9 +323,60 @@ function codebaseMeta(rec, pageUrl) {
   };
 }
 
+// Dynamic per-codebase social card (1200x630 PNG) rendered with satori/resvg.
+async function handleCodebaseOg(id, env, url) {
+  let rec = null;
+  if (env.CODEBASES && /^[a-z0-9]{5,18}$/.test(id)) {
+    const v = await env.CODEBASES.get(id);
+    if (v) { try { rec = JSON.parse(v); } catch (e) {} }
+  }
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const name = esc(((rec && rec.name) || "Codebase")).slice(0, 64);
+  const n = rec && Array.isArray(rec.files) ? rec.files.length : 0;
+  const models = (rec && rec.models) ? [rec.models.builder, rec.models.reviewer].filter(Boolean) : [];
+  const chips = models.map((m) => `<div style="display:flex;background:rgba(97,121,255,0.16);border:1px solid rgba(124,140,255,0.4);color:#c7d0ff;border-radius:999px;padding:8px 20px;font-size:26px;margin-right:14px;">${esc(m)}</div>`).join("");
+  const html = `<div style="display:flex;flex-direction:column;width:1200px;height:630px;background:#0a0a12;padding:70px;justify-content:space-between;font-family:Inter;">
+    <div style="display:flex;align-items:center;">
+      <div style="display:flex;color:#7b8cff;font-size:42px;font-weight:700;letter-spacing:5px;">SEER</div>
+      <div style="display:flex;color:rgba(255,255,255,0.42);font-size:28px;margin-left:20px;">· Mantic Think</div>
+    </div>
+    <div style="display:flex;flex-direction:column;">
+      <div style="display:flex;color:rgba(255,255,255,0.5);font-size:30px;margin-bottom:14px;">Codebase</div>
+      <div style="display:flex;color:#ffffff;font-size:78px;font-weight:700;line-height:1.05;">${name}</div>
+      <div style="display:flex;color:rgba(255,255,255,0.6);font-size:32px;margin-top:24px;">${n} file${n === 1 ? "" : "s"} · built by two AI coders</div>
+      <div style="display:flex;margin-top:30px;">${chips}</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;color:rgba(255,255,255,0.4);font-size:28px;">manticthink.com</div>
+      <div style="display:flex;color:#7b8cff;font-size:28px;">Build your own by chat »</div>
+    </div>
+  </div>`;
+  const [reg, bold] = await Promise.all([
+    env.ASSETS.fetch(new URL("/vendor/Inter-400.woff", url)).then((r) => r.arrayBuffer()),
+    env.ASSETS.fetch(new URL("/vendor/Inter-700.woff", url)).then((r) => r.arrayBuffer()),
+  ]);
+  // Lazy-load so the satori/resvg WASM only initializes on an OG request (and so
+  // worker.js stays importable in Node for the route tests).
+  const { ImageResponse } = await import("workers-og");
+  const img = new ImageResponse(html, {
+    width: 1200, height: 630,
+    fonts: [
+      { name: "Inter", data: reg, weight: 400, style: "normal" },
+      { name: "Inter", data: bold, weight: 700, style: "normal" },
+    ],
+  });
+  const h = new Headers(img.headers);
+  h.set("cache-control", "public, max-age=86400");
+  return new Response(img.body, { status: img.status, headers: h });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    {
+      const ogm = url.pathname.match(/^\/c\/([A-Za-z0-9_-]+)\/og\.png$/);
+      if (ogm) return handleCodebaseOg(ogm[1], env, url);
+    }
     if (url.pathname === "/api/models") return json({ models: modelList(env) });
     if (url.pathname === "/api/catalog") {
       if (request.method !== "GET") return json({ error: "Use GET." }, 405);
@@ -375,13 +426,16 @@ export default {
       const base = new Response(spa.body, { status: spa.status, statusText: spa.statusText, headers: sh });
       if (!rec) return base;
       const meta = codebaseMeta(rec, url.origin + url.pathname);
+      const ogImg = meta.url + "/og.png";
       return new HTMLRewriter()
         .on("title", { element(e) { e.setInnerContent(meta.title); } })
         .on('meta[name="description"]', { element(e) { e.setAttribute("content", meta.desc); } })
         .on('meta[property="og:title"]', { element(e) { e.setAttribute("content", meta.title); } })
         .on('meta[property="og:description"]', { element(e) { e.setAttribute("content", meta.desc); } })
         .on('meta[property="og:url"]', { element(e) { e.setAttribute("content", meta.url); } })
+        .on('meta[property="og:image"]', { element(e) { e.setAttribute("content", ogImg); } })
         .on('meta[property="og:image:alt"]', { element(e) { e.setAttribute("content", meta.title); } })
+        .on('meta[name="twitter:image"]', { element(e) { e.setAttribute("content", ogImg); } })
         .on('meta[name="twitter:title"]', { element(e) { e.setAttribute("content", meta.title); } })
         .on('meta[name="twitter:description"]', { element(e) { e.setAttribute("content", meta.desc); } })
         .transform(base);
