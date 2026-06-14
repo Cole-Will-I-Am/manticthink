@@ -181,6 +181,121 @@
         <input id="fileInput" type="file" multiple hidden accept=".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.yaml,.yml,.xml,.html,.htm,.css,.js,.mjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.c,.h,.cpp,.cc,.cs,.php,.sh,.bash,.sql,.toml,.ini,.cfg,.log" />
       </footer>
     </div>
+
+    <!-- Codebase workspace (VS Code / GitHub-like): file tree + editor + build chat -->
+    <div id="codebasePane" class="hidden">
+      <div class="cb-topbar">
+        <button id="cbBack" class="cb-back" title="Back to codebases">‹ Codebases</button>
+        <input id="cbName" class="cb-name" spellcheck="false" />
+        <span id="cbModels" class="cb-models"></span>
+        <span class="cb-spacer"></span>
+        <span id="cbStatus" class="cb-status"></span>
+        <button id="cbStop" class="cb-btn hidden" title="Stop build">Stop</button>
+        <div class="cb-export-wrap">
+          <button id="cbExportBtn" class="cb-btn" title="Save / export">Export ▾</button>
+          <div id="cbExportMenu" class="cb-export-menu hidden">
+            <button type="button" data-act="zip">Download ZIP</button>
+            <button type="button" data-act="copy">Copy active file</button>
+            <button type="button" data-act="share">Share link</button>
+            <button type="button" data-act="github">Push to GitHub</button>
+          </div>
+        </div>
+        <button id="cbSettingsBtn" class="cb-btn" title="Codebase settings">⚙</button>
+      </div>
+      <div class="cb-grid">
+        <div class="cb-tree">
+          <div class="cb-tree-head"><span>Files</span><button id="cbNewFile" class="cb-mini" title="New file">+</button></div>
+          <div id="cbTree" class="cb-tree-list"></div>
+        </div>
+        <div class="cb-editor">
+          <div class="cb-editor-head"><span id="cbEditPath" class="cb-edit-path">No file open</span><button id="cbCopyFile" class="cb-mini" type="button">Copy</button></div>
+          <textarea id="cbEdit" class="cb-edit-area" spellcheck="false" placeholder="Select a file from the tree, or describe what to build in the chat →"></textarea>
+        </div>
+        <div class="cb-chat">
+          <div id="cbThread" class="cb-thread"></div>
+          <div id="cbErr" class="cb-err" style="display:none"></div>
+          <div class="cb-composer">
+            <textarea id="cbInput" rows="1" placeholder="Describe what to build or change…"></textarea>
+            <button id="cbSend" title="Build" aria-label="Build">↑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Codebase create / settings modal -->
+  <div id="codebaseModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="cbmTitle">New codebase</span>
+        <button id="cbmClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div class="set-section">
+          <div class="mm-label">Name</div>
+          <input id="cbmName" class="pj-paste-input" type="text" placeholder="My codebase" autocomplete="off" />
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Builder model — writes &amp; edits files</div>
+          <select id="cbmBuilder" class="cb-select"></select>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Reviewer model — critiques each change</div>
+          <select id="cbmReviewer" class="cb-select"></select>
+          <label class="cb-check"><input id="cbmReviewerOn" type="checkbox" checked /> Enable reviewer (two-model build)</label>
+        </div>
+        <div class="set-section">
+          <div class="mm-label">Builder ⇄ Reviewer rounds <span id="cbmRoundsVal" class="pj-size"></span></div>
+          <input id="cbmRounds" type="range" min="1" max="4" value="2" class="cb-range" />
+        </div>
+        <div class="sp-hint">Files live in your browser. Export to ZIP, a share link, or push to GitHub anytime.</div>
+        <div class="sp-foot set-foot">
+          <button id="cbmSave" class="mm-add-btn" type="button">Create codebase</button>
+          <button id="cbmDelete" class="ghost cb-danger" type="button" style="display:none">Delete</button>
+          <button id="cbmCancel" class="ghost" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Codebase → GitHub push modal -->
+  <div id="cbGithubModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span>Push to GitHub</span>
+        <button id="cbghClose" class="icon-btn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="mm-body">
+        <div id="cbghGate" class="set-section hidden">
+          <div class="mm-label">GitHub token — needs <strong>Contents: write</strong>; creating a repo needs the classic <code>repo</code> scope</div>
+          <input id="cbghToken" type="password" class="cb-select" placeholder="ghp_… or github_pat_…" autocomplete="off" />
+          <div id="cbghGateErr" class="cb-err" style="display:none"></div>
+          <button id="cbghConnect" class="mm-add-btn" type="button" style="margin-top:8px">Connect</button>
+        </div>
+        <div id="cbghForm">
+          <div class="set-section">
+            <div class="mm-label">Repository <span id="cbghUser" class="pj-size"></span></div>
+            <input id="cbghRepo" type="text" class="cb-select" placeholder="owner/repo" autocomplete="off" />
+            <label class="cb-check"><input id="cbghCreate" type="checkbox" /> Create as a new private repo if it doesn't exist</label>
+          </div>
+          <div class="set-section">
+            <div class="mm-label">Branch</div>
+            <input id="cbghBranch" type="text" class="cb-select" value="main" autocomplete="off" />
+          </div>
+          <div class="set-section">
+            <div class="mm-label">Commit message</div>
+            <input id="cbghMsg" type="text" class="cb-select" autocomplete="off" />
+          </div>
+          <label class="cb-check"><input id="cbghForce" type="checkbox" /> Force push (overwrite remote on conflict)</label>
+          <div id="cbghStatus" class="cb-status" style="margin-top:10px"></div>
+          <div class="sp-foot set-foot">
+            <button id="cbghPush" class="mm-add-btn" type="button">Push</button>
+            <button id="cbghDisconnect" class="ghost" type="button">Disconnect</button>
+            <button id="cbghCancel" class="ghost" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Model management modal -->

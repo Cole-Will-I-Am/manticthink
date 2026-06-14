@@ -283,6 +283,46 @@ function debateMeta(rec, pageUrl) {
   };
 }
 
+// ---- Shared codebases (KV-backed short links) ----
+// A shared codebase is a name + a flat list of {path, content} files + the
+// models that built it. Bigger than debates, so a higher (but bounded) cap.
+async function handleCodebaseStore(request, env) {
+  if (!env.CODEBASES) return json({ error: "Sharing is not configured." }, 503);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "Invalid JSON body." }, 400); }
+  if (!body || typeof body.name !== "string" || !Array.isArray(body.files) || !body.files.length) {
+    return json({ error: "Invalid codebase." }, 400);
+  }
+  if (!body.files.every((f) => f && typeof f.path === "string" && typeof f.content === "string")) {
+    return json({ error: "Invalid codebase files." }, 400);
+  }
+  const payload = JSON.stringify({ name: body.name, files: body.files, models: body.models || null });
+  if (payload.length > 500000) return json({ error: "Codebase too large to share — export to ZIP or push to GitHub." }, 413);
+  let id = debateShortId();
+  if (await env.CODEBASES.get(id)) id = debateShortId() + debateShortId().slice(0, 2);
+  await env.CODEBASES.put(id, payload, { expirationTtl: 60 * 60 * 24 * 365 });
+  track(env, "codebase_share", "store");
+  return json({ id }, 200);
+}
+
+async function handleCodebaseGet(env, id) {
+  if (!env.CODEBASES || !/^[a-z0-9]{5,18}$/.test(id)) return json({ error: "Not found." }, 404);
+  const val = await env.CODEBASES.get(id);
+  if (!val) return json({ error: "This shared codebase was not found or has expired." }, 404);
+  return new Response(val, { status: 200, headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+// Social-unfurl meta for a shared codebase. HTMLRewriter escapes the values.
+function codebaseMeta(rec, pageUrl) {
+  const name = String(rec.name || "Codebase").replace(/\s+/g, " ").trim().slice(0, 120) || "Codebase";
+  const n = Array.isArray(rec.files) ? rec.files.length : 0;
+  return {
+    title: ("Codebase: " + name).slice(0, 180),
+    desc: (`${n} file${n === 1 ? "" : "s"} built with two AI coders on Mantic Think — browse it, then build your own.`).slice(0, 240),
+    url: pageUrl,
+  };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -310,6 +350,41 @@ export default {
     if (url.pathname.startsWith("/api/debate/")) {
       if (request.method !== "GET") return json({ error: "Use GET." }, 405);
       return handleDebateGet(env, decodeURIComponent(url.pathname.slice("/api/debate/".length)));
+    }
+    if (url.pathname === "/api/codebase") {
+      if (request.method !== "POST") return json({ error: "Use POST." }, 405);
+      return handleCodebaseStore(request, env);
+    }
+    if (url.pathname.startsWith("/api/codebase/")) {
+      if (request.method !== "GET") return json({ error: "Use GET." }, 405);
+      return handleCodebaseGet(env, decodeURIComponent(url.pathname.slice("/api/codebase/".length)));
+    }
+    // Short codebase share links — serve the SPA + rewrite OG/Twitter meta.
+    if (/^\/c\/[A-Za-z0-9_-]+$/.test(url.pathname)) {
+      const spa = await env.ASSETS.fetch(new Request(new URL("/", url)));
+      const sh = new Headers(spa.headers);
+      sh.set("Cross-Origin-Opener-Policy", "same-origin");
+      sh.set("Cross-Origin-Embedder-Policy", "require-corp");
+      sh.delete("content-length");
+      let rec = null;
+      const id = url.pathname.slice(3);
+      if (env.CODEBASES && /^[a-z0-9]{5,18}$/.test(id)) {
+        const v = await env.CODEBASES.get(id);
+        if (v) { try { rec = JSON.parse(v); } catch (e) {} }
+      }
+      const base = new Response(spa.body, { status: spa.status, statusText: spa.statusText, headers: sh });
+      if (!rec) return base;
+      const meta = codebaseMeta(rec, url.origin + url.pathname);
+      return new HTMLRewriter()
+        .on("title", { element(e) { e.setInnerContent(meta.title); } })
+        .on('meta[name="description"]', { element(e) { e.setAttribute("content", meta.desc); } })
+        .on('meta[property="og:title"]', { element(e) { e.setAttribute("content", meta.title); } })
+        .on('meta[property="og:description"]', { element(e) { e.setAttribute("content", meta.desc); } })
+        .on('meta[property="og:url"]', { element(e) { e.setAttribute("content", meta.url); } })
+        .on('meta[property="og:image:alt"]', { element(e) { e.setAttribute("content", meta.title); } })
+        .on('meta[name="twitter:title"]', { element(e) { e.setAttribute("content", meta.title); } })
+        .on('meta[name="twitter:description"]', { element(e) { e.setAttribute("content", meta.desc); } })
+        .transform(base);
     }
     // Short debate share links — serve the SPA (so the client renders the debate)
     // and rewrite the OG/Twitter meta so the link unfurls nicely on social.

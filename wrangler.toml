@@ -20,6 +20,11 @@ dataset = "manticthink_events"
 binding = "DEBATES"
 id = "23843e5a2c7f425ba9274ee811c90827"
 
+# Stores codebases users explicitly Share (so /c/<id> short links work).
+[[kv_namespaces]]
+binding = "CODEBASES"
+id = "a77d67b50b834f9aaa04eabf9e944e44"
+
 # Non-secret config (edit freely, then redeploy). The model list shows in the
 # picker; set these to the Ollama models you actually have access to.
 [vars]

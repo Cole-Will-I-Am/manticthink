@@ -88,6 +88,17 @@ const els = {
   pjName: $('pjName'), pjInstr: $('pjInstr'), pjFiles: $('pjFiles'), pjSize: $('pjSize'), pjUpload: $('pjUpload'),
   pjPaste: $('pjPaste'), pjPasteName: $('pjPasteName'), pjPasteAdd: $('pjPasteAdd'),
   pjSave: $('pjSave'), pjDelete: $('pjDelete'), pjCancel: $('pjCancel'),
+  chatPane: $('chatPane'), codebasePane: $('codebasePane'),
+  cbBack: $('cbBack'), cbName: $('cbName'), cbModels: $('cbModels'), cbStatus: $('cbStatus'), cbStop: $('cbStop'),
+  cbExportBtn: $('cbExportBtn'), cbExportMenu: $('cbExportMenu'), cbSettingsBtn: $('cbSettingsBtn'),
+  cbNewFile: $('cbNewFile'), cbTree: $('cbTree'), cbEditPath: $('cbEditPath'), cbCopyFile: $('cbCopyFile'), cbEdit: $('cbEdit'),
+  cbThread: $('cbThread'), cbErr: $('cbErr'), cbInput: $('cbInput'), cbSend: $('cbSend'),
+  codebaseModal: $('codebaseModal'), cbmTitle: $('cbmTitle'), cbmClose: $('cbmClose'), cbmName: $('cbmName'),
+  cbmBuilder: $('cbmBuilder'), cbmReviewer: $('cbmReviewer'), cbmReviewerOn: $('cbmReviewerOn'),
+  cbmRounds: $('cbmRounds'), cbmRoundsVal: $('cbmRoundsVal'), cbmSave: $('cbmSave'), cbmDelete: $('cbmDelete'), cbmCancel: $('cbmCancel'),
+  cbGithubModal: $('cbGithubModal'), cbghClose: $('cbghClose'), cbghGate: $('cbghGate'), cbghToken: $('cbghToken'), cbghGateErr: $('cbghGateErr'), cbghConnect: $('cbghConnect'),
+  cbghForm: $('cbghForm'), cbghUser: $('cbghUser'), cbghRepo: $('cbghRepo'), cbghCreate: $('cbghCreate'), cbghBranch: $('cbghBranch'), cbghMsg: $('cbghMsg'), cbghForce: $('cbghForce'),
+  cbghStatus: $('cbghStatus'), cbghPush: $('cbghPush'), cbghDisconnect: $('cbghDisconnect'), cbghCancel: $('cbghCancel'),
 };
 
 /* ---------- Generation settings (per-conversation, with global defaults) ---------- */
@@ -502,8 +513,10 @@ function renderSideTabs() {
 
 function switchSideView(v) {
   setSideView(v);
-  if (v === 'chats') { setActiveProject(null); return; }  // leave any project scope, show all chats
+  if (v !== 'codebases') { activeCodebaseId = null; try { localStorage.removeItem('mt_active_codebase'); } catch (e) {} }
+  if (v === 'chats') { setActiveProject(null); applyPaneVisibility(); return; }  // leave any project scope, show all chats
   renderSidebar();
+  applyPaneVisibility();
 }
 
 // Body of the Projects tab: a list of projects, or — when one is open — that
@@ -809,6 +822,9 @@ let sideView = localStorage.getItem('mt_side_view') || 'chats';          // 'cha
 // Invariant: a project is only "open" while the Projects tab is selected, so a
 // stale scope can never misassign new chats created from the Chats tab.
 if (sideView !== 'projects') activeProjectId = null;
+let activeCodebaseId = localStorage.getItem('mt_active_codebase') || null;  // open codebase, or null = list view
+// A codebase is only "open" while the Codebases tab is selected.
+if (sideView !== 'codebases') activeCodebaseId = null;
 function setSideView(v) { sideView = v; try { localStorage.setItem('mt_side_view', v); } catch (e) {} }
 
 const SUGGESTIONS = [
@@ -1425,7 +1441,10 @@ function disconnect() {
 function enterApp() {
   showApp(true);
   if (activeProjectId && !getProject(activeProjectId)) activeProjectId = null;
+  if (activeCodebaseId && !getCodebase(activeCodebaseId)) activeCodebaseId = null;
   openMostRecentOrNew(); renderSidebar();
+  if (sideView === 'codebases' && activeCodebaseId) openCodebase(activeCodebaseId);
+  applyPaneVisibility();
 }
 
 /* ---------- Conversations ---------- */
@@ -1608,7 +1627,7 @@ function convRow(c) {
 function renderSidebar() {
   renderSideTabs();
   els.convList.innerHTML = '';
-  if (sideView === 'codebases') { els.convList.innerHTML = '<div class="conv-empty">Codebases are coming soon.</div>'; return; }
+  if (sideView === 'codebases') { renderCodebasesView(); return; }
   if (sideView === 'projects') { renderProjectsView(); return; }
   // Chats tab: every conversation, regardless of project.
   const list = store.list();
@@ -2651,8 +2670,7 @@ els.keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect
 els.disconnect.addEventListener('click', disconnect);
 els.newChat.addEventListener('click', () => { newConversation(); closeDrawer(); });
 els.newProject.addEventListener('click', () => { openProjectEditor(null); closeDrawer(); });
-// Codebases: dedicated feature still being designed — placeholder for now.
-els.newCodebase.addEventListener('click', () => { toast('Codebases are coming soon.'); });
+els.newCodebase.addEventListener('click', () => { if (sideView !== 'codebases') switchSideView('codebases'); openCodebaseModal(null); closeDrawer(); });
 // On desktop the ☰ (revealed only when collapsed) re-expands the sidebar; on
 // phones it opens the drawer as before.
 els.menuBtn.addEventListener('click', () => { if (desktopMq.matches) toggleSidebar(); else openDrawer(); });
@@ -2817,7 +2835,693 @@ els.pjPasteAdd.addEventListener('click', () => {
 });
 
 /* ---------- Boot ---------- */
+/* ========================= Codebases =========================
+   A VS Code / GitHub-like workspace: chat with two coder models
+   (Builder + Reviewer) to build a multi-file codebase, edit files by
+   hand, and save/export. Files + build chat live in their own
+   localStorage record (separate from conversations). */
+
+const CB_INDEX = 'mt_codebases';
+const CB_FILE_CAP = 200 * 1024;       // per-file byte cap (matches projects)
+const CB_TOTAL_CAP = 2 * 1024 * 1024; // soft per-codebase ceiling
+const CB_MAX_FILES = 300;
+
+let currentCb = null;          // loaded codebase record (analog of `current`)
+let cbActivePath = null;       // path of the file open in the editor
+let cbEditTimer = null;        // debounce for hand-edits
+let cbController = null;        // AbortController for an in-flight build
+let cbBuilding = false;
+let cbEditingId = null;        // codebase id being edited in the modal
+let cbReadOnly = false;        // true when viewing a shared codebase (/c/<id>)
+
+const cbStore = {
+  body: (id) => 'mt_codebase_' + id,
+  _get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  list() { return this._get(CB_INDEX, []); },
+  load(id) { return this._get(this.body(id), null); },
+  save(cb) {
+    cb.updatedAt = Date.now();
+    try { localStorage.setItem(this.body(cb.id), JSON.stringify(cb)); }
+    catch (e) { toast('Storage full — export to ZIP or remove files to save.'); return false; }
+    const idx = this.list().filter((c) => c.id !== cb.id);
+    idx.unshift({ id: cb.id, name: cb.name, updatedAt: cb.updatedAt, fileCount: cb.files.length, models: cb.models });
+    idx.sort((a, b) => b.updatedAt - a.updatedAt);
+    try { localStorage.setItem(CB_INDEX, JSON.stringify(idx)); } catch (e) {}
+    return true;
+  },
+  remove(id) {
+    try { localStorage.removeItem(this.body(id)); } catch (e) {}
+    try { localStorage.setItem(CB_INDEX, JSON.stringify(this.list().filter((c) => c.id !== id))); } catch (e) {}
+  },
+};
+function loadCodebases() { return cbStore.list(); }
+function getCodebase(id) { return cbStore.load(id); }
+function cbTotalBytes(cb) { let n = 0; for (const f of (cb.files || [])) n += fileBytes(f.content); return n; }
+
+// Pick sensible default models from the user's curated list.
+function cbDefaultModels() {
+  const list = debateModelList();
+  const pick = (re) => list.find((m) => re.test(m));
+  const builder = pick(/qwen.*coder/i) || pick(/coder/i) || list[0] || '';
+  const reviewer = pick(/kimi/i) || list.find((m) => m !== builder) || builder;
+  return { builder, reviewer };
+}
+
+// System message describing the codebase to the models (file list always;
+// bodies only up to a budget so we never blow the context window).
+function compileCodebaseContext(cb) {
+  const parts = ['## Codebase: ' + (cb.name || 'Untitled')];
+  const listing = (cb.files || []).map((f) => '- ' + f.path + ' (' + fmtBytes(fileBytes(f.content)) + ')').join('\n') || '(empty — no files yet)';
+  parts.push('### Files\n' + listing);
+  let budget = 40 * 1024;
+  const ordered = [...(cb.files || [])].sort((a, b) => (a.path === cbActivePath ? -1 : b.path === cbActivePath ? 1 : (b.updatedAt || 0) - (a.updatedAt || 0)));
+  const bodies = [];
+  for (const f of ordered) { const sz = fileBytes(f.content); if (sz > budget) continue; bodies.push('#### ' + f.path + '\n```\n' + f.content + '\n```'); budget -= sz; }
+  if (bodies.length) parts.push('### Current file contents\n' + bodies.join('\n\n'));
+  parts.push('Use read_file to inspect any file not shown in full above. Make changes ONLY through the file tools.');
+  return parts.join('\n\n');
+}
+
+/* ---- file-mutation tools (separate registry; bound to currentCb) ---- */
+function cbNormPath(p) {
+  p = String(p || '').trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/{2,}/g, '/');
+  if (!p) return { err: 'path is empty' };
+  if (p.length > 255) return { err: 'path too long (max 255)' };
+  if (/\0/.test(p)) return { err: 'invalid character in path' };
+  if (p.split('/').some((s) => s === '' || s === '.' || s === '..')) return { err: "path may not contain '.' or '..' segments" };
+  return { path: p };
+}
+function cbGetFile(path) { return (currentCb && currentCb.files.find((f) => f.path === path)) || null; }
+function cbAfterMutation() { cbStore.save(currentCb); cbRenderTree(); renderSidebar(); }
+
+function cbToolWrite(path, content) {
+  if (!currentCb) return 'Error: no codebase open';
+  const n = cbNormPath(path); if (n.err) return 'Error: ' + n.err;
+  content = String(content == null ? '' : content);
+  if (content.length > CB_FILE_CAP) return 'Error: file exceeds the 200KB cap';
+  let f = cbGetFile(n.path); const existed = !!f;
+  if (!existed && currentCb.files.length >= CB_MAX_FILES) return 'Error: too many files (max ' + CB_MAX_FILES + ')';
+  if (f) { f.content = content; f.updatedAt = Date.now(); } else { currentCb.files.push({ path: n.path, content, updatedAt: Date.now() }); }
+  cbAfterMutation();
+  if (cbActivePath === n.path) cbRefreshEditor();
+  return 'ok: ' + (existed ? 'overwrote ' : 'wrote ') + n.path + ' (' + content.length + ' bytes)';
+}
+function cbToolRead(path) {
+  if (!currentCb) return 'Error: no codebase open';
+  const n = cbNormPath(path); if (n.err) return 'Error: ' + n.err;
+  const f = cbGetFile(n.path); if (!f) return 'Error: no such file: ' + n.path;
+  let c = f.content || ''; if (c.length > 50 * 1024) c = c.slice(0, 50 * 1024) + '\n…[truncated]'; return c;
+}
+function cbToolListFiles() {
+  if (!currentCb) return 'Error: no codebase open';
+  if (!currentCb.files.length) return '(no files yet)';
+  return currentCb.files.map((f) => f.path + ' (' + fileBytes(f.content) + ' bytes)').join('\n');
+}
+function cbToolDelete(path) {
+  if (!currentCb) return 'Error: no codebase open';
+  const n = cbNormPath(path); if (n.err) return 'Error: ' + n.err;
+  const before = currentCb.files.length;
+  currentCb.files = currentCb.files.filter((f) => f.path !== n.path);
+  if (currentCb.files.length === before) return 'Error: no such file: ' + n.path;
+  if (cbActivePath === n.path) { cbActivePath = null; els.cbEdit.value = ''; els.cbEditPath.textContent = 'No file open'; }
+  cbAfterMutation();
+  return 'ok: deleted ' + n.path;
+}
+function cbToolRename(from, to) {
+  if (!currentCb) return 'Error: no codebase open';
+  const a = cbNormPath(from), b = cbNormPath(to);
+  if (a.err) return 'Error: from: ' + a.err; if (b.err) return 'Error: to: ' + b.err;
+  const f = cbGetFile(a.path); if (!f) return 'Error: no such file: ' + a.path;
+  if (cbGetFile(b.path)) return 'Error: target already exists: ' + b.path;
+  f.path = b.path; f.updatedAt = Date.now();
+  if (cbActivePath === a.path) { cbActivePath = b.path; els.cbEditPath.textContent = b.path; }
+  cbAfterMutation();
+  return 'ok: renamed ' + a.path + ' → ' + b.path;
+}
+
+const CB_TOOL_DEFS = {
+  write_file: { schema: { type: 'function', function: { name: 'write_file', description: 'Create or overwrite a file at a repo-relative path with COMPLETE contents (never partial diffs). Returns ok + byte size.', parameters: { type: 'object', properties: { path: { type: 'string', description: 'Repo-relative path, e.g. src/index.js' }, content: { type: 'string', description: 'Full file contents.' } }, required: ['path', 'content'] } } }, run: (a) => cbToolWrite(a.path, a.content) },
+  read_file: { schema: { type: 'function', function: { name: 'read_file', description: 'Return the full current contents of a file.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } }, run: (a) => cbToolRead(a.path) },
+  list_files: { schema: { type: 'function', function: { name: 'list_files', description: 'List all file paths in the codebase with byte sizes.', parameters: { type: 'object', properties: {} } } }, run: () => cbToolListFiles() },
+  delete_file: { schema: { type: 'function', function: { name: 'delete_file', description: 'Delete a file by path.', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } }, run: (a) => cbToolDelete(a.path) },
+  rename_file: { schema: { type: 'function', function: { name: 'rename_file', description: 'Rename/move a file, preserving content.', parameters: { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } }, required: ['from', 'to'] } } }, run: (a) => cbToolRename(a.from, a.to) },
+};
+
+/* ---- Builder + Reviewer orchestration ---- */
+function cbExpandConversation(cb) {
+  const out = [];
+  for (const m of (cb.messages || [])) {
+    if (m.role === 'user') { out.push({ role: 'user', content: m.content }); continue; }
+    if (m.role !== 'assistant') continue;
+    if (m.author === 'reviewer') { out.push({ role: 'user', content: 'Reviewer feedback on the previous changes:\n' + (m.content || '') }); continue; }
+    if (m.toolRounds && m.toolRounds.length) {
+      for (const tr of m.toolRounds) {
+        out.push({ role: 'assistant', content: '', tool_calls: [{ function: { name: tr.name, arguments: tr.args || {} } }] });
+        out.push({ role: 'tool', content: String(tr.result == null ? '' : tr.result) });
+      }
+    }
+    out.push({ role: 'assistant', content: m.content || '' });
+  }
+  return out;
+}
+function cbBuilderPersona(cb) {
+  return [
+    'You are the Builder, a senior software engineer constructing a multi-file codebase named "' + (cb.name || 'project') + '".',
+    'You make ALL file changes through the provided tools: write_file, read_file, list_files, delete_file, rename_file.',
+    'Always read_file before editing an existing file unless you are creating it. Write COMPLETE, runnable file contents — never partial diffs or "// rest unchanged".',
+    'Keep files focused and idiomatic; prefer small, composable files. Do not paste whole file bodies into the chat — they live in the file tree.',
+    'When a Reviewer has raised concerns, address them directly in your next changes.',
+    'After your tool calls, end with a 2–4 line plain-text summary of what you changed and why.',
+  ].join('\n');
+}
+function cbReviewerPersona() {
+  return [
+    "You are the Reviewer, a senior engineer doing a focused code review of the Builder's latest changes. You CANNOT edit files.",
+    "You are shown the Builder's summary and the files it changed this round.",
+    'Flag correctness bugs, security issues, broken imports/paths, and missing pieces first; then maintainability.',
+    'Be concrete and concise (under 180 words). Describe the fix — do not rewrite whole files.',
+    'If the changes are sound, say so plainly (e.g. "Looks good — no blocking issues") so the Builder can stop.',
+  ].join('\n');
+}
+function cbReviewerUserPrompt(cb, builderSummary, changedPaths) {
+  const files = changedPaths.map((p) => {
+    const f = cbGetFile(p); if (!f) return '#### ' + p + ' (deleted)';
+    let c = f.content || ''; if (c.length > 20 * 1024) c = c.slice(0, 20 * 1024) + '\n…[truncated]';
+    return '#### ' + p + '\n```\n' + c + '\n```';
+  }).join('\n\n');
+  return 'Builder summary:\n' + (builderSummary || '(none)') + '\n\nFiles changed this round:\n' + (files || '(none)') + '\n\nReview these changes.';
+}
+function cbReviewerApproves(text) {
+  const t = (text || '').trim();
+  if (t.length < 8) return true;
+  return /\b(looks good|lgtm|no (blocking )?issues|no concerns|approved|ship it|all good)\b/i.test(t);
+}
+
+// Builder turn: streamed NDJSON + tool loop (mirrors streamAssistant, but
+// parameterized by model/messages/tool-registry and not bound to `current`).
+async function streamCodebaseBuild(model, messages, toolRegistry, node, signal) {
+  const convo = [...messages]; const toolRounds = []; let acc = '';
+  const schemas = Object.values(toolRegistry).map((t) => t.schema);
+  for (let iter = 0; iter < 8; iter++) {
+    const resp = await fetch(localMode ? localBase() + '/api/chat' : '/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ model, messages: convo, tools: schemas, stream: true }),
+      signal,
+    });
+    if (!localMode && resp.status === 401) throw new Error('Your key was rejected — please reconnect.');
+    if (!resp.ok || !resp.body) { const d = await resp.text().catch(() => ''); throw new Error('Request failed (' + resp.status + ') ' + d.slice(0, 160)); }
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = '';
+    let turnContent = '', toolCalls = [];
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const line of lines) {
+        const t = line.trim(); if (!t) continue;
+        let obj; try { obj = JSON.parse(t); } catch (e) { continue; }
+        if (obj.error) throw new Error(obj.error);
+        const msg = obj.message || {};
+        if (msg.content) { node.clearTyping(); turnContent += msg.content; acc += msg.content; node.bubble.textContent = acc; node.bubble.classList.add('cursor'); node.scroll(); }
+        if (msg.tool_calls && msg.tool_calls.length) for (const tc of msg.tool_calls) toolCalls.push(tc);
+      }
+    }
+    buf += dec.decode();
+    if (toolCalls.length) {
+      node.clearTyping();
+      convo.push({ role: 'assistant', content: turnContent, tool_calls: toolCalls });
+      for (const tc of toolCalls) {
+        if (signal.aborted) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
+        const name = tc.function && tc.function.name;
+        let args = tc.function && tc.function.arguments;
+        if (typeof args === 'string') { try { args = JSON.parse(args); } catch (e) { args = {}; } }
+        args = args || {};
+        const def = toolRegistry[name];
+        const ui = node.addToolCall(name || 'tool', JSON.stringify(args, null, 2));
+        let result;
+        if (!def) { result = 'Error: unknown tool "' + name + '"'; ui.setError(result); }
+        else { try { result = await def.run(args); ui.setResult(result); } catch (e) { result = 'Error: ' + (e.message || e); ui.setError(result); } }
+        result = (typeof result === 'string') ? result : JSON.stringify(result);
+        toolRounds.push({ name, args, result });
+        convo.push({ role: 'tool', content: result });
+      }
+      if (signal.aborted) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
+      continue;
+    }
+    break;
+  }
+  node.bubble.classList.remove('cursor');
+  if (acc) { renderAssistantHTML(node.bubble, acc); node.bubble.dataset.raw = acc; } else if (!node.bubble.textContent) node.bubble.textContent = '(no changes)';
+  return { content: acc, toolRounds };
+}
+
+async function cbRunBuild(text) {
+  if (cbBuilding || !currentCb) return;
+  text = String(text || '').trim(); if (!text) return;
+  cbShowErr('');
+  currentCb.messages.push({ role: 'user', content: text });
+  cbAddMsg('user', null).finalize(text);
+  cbStore.save(currentCb);
+  cbBuilding = true; cbController = new AbortController();
+  els.cbStop.classList.remove('hidden'); els.cbSend.disabled = true;
+  const bm = (currentCb.models && currentCb.models.builder) || '';
+  const rm = (currentCb.models && currentCb.models.reviewer) || '';
+  const reviewerEnabled = currentCb.reviewerEnabled !== false && !!rm;
+  const rounds = Math.max(1, Math.min(4, parseInt(currentCb.rounds, 10) || 2));
+  try {
+    for (let r = 0; r < rounds; r++) {
+      cbSetStatus('Builder working… (round ' + (r + 1) + '/' + rounds + ')');
+      const bnode = cbAddMsg('builder', bm);
+      const messages = [{ role: 'system', content: cbBuilderPersona(currentCb) }, { role: 'system', content: compileCodebaseContext(currentCb) }, ...cbExpandConversation(currentCb)];
+      const out = await streamCodebaseBuild(bm, messages, CB_TOOL_DEFS, bnode, cbController.signal);
+      currentCb.messages.push({ role: 'assistant', author: 'builder', content: out.content, toolRounds: out.toolRounds.length ? out.toolRounds : undefined });
+      cbStore.save(currentCb);
+      if (!reviewerEnabled || cbController.signal.aborted) break;
+      const changed = [...new Set(out.toolRounds.filter((t) => ['write_file', 'rename_file', 'delete_file'].includes(t.name)).map((t) => (t.args && (t.args.to || t.args.path)) || '').filter(Boolean))];
+      cbSetStatus('Reviewer reviewing…');
+      const rnode = cbAddMsg('reviewer', rm);
+      const critique = await streamDebateTurn(rm, cbReviewerPersona(), cbReviewerUserPrompt(currentCb, out.content, changed), rnode, cbController.signal);
+      currentCb.messages.push({ role: 'assistant', author: 'reviewer', content: critique });
+      cbStore.save(currentCb);
+      if (cbReviewerApproves(critique)) break;
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') cbShowErr(e.message || 'Build failed.');
+  }
+  cbBuilding = false; cbController = null;
+  els.cbStop.classList.add('hidden'); els.cbSend.disabled = false;
+  cbSetStatus(''); renderSidebar();
+}
+
+/* ---- workspace UI ---- */
+function applyPaneVisibility() {
+  const showCb = sideView === 'codebases' && !!activeCodebaseId;
+  if (els.codebasePane) els.codebasePane.classList.toggle('hidden', !showCb);
+  if (els.chatPane) els.chatPane.classList.toggle('hidden', showCb);
+}
+function cbSetStatus(t) { if (els.cbStatus) els.cbStatus.textContent = t || ''; }
+function cbShowErr(t) { if (!els.cbErr) return; els.cbErr.textContent = t || ''; els.cbErr.style.display = t ? 'block' : 'none'; }
+
+function openCodebase(id) {
+  const cb = getCodebase(id); if (!cb) return;
+  cbReadOnly = false;
+  activeCodebaseId = id; try { localStorage.setItem('mt_active_codebase', id); } catch (e) {}
+  currentCb = cb; cbActivePath = null;
+  renderCbWorkspace(); renderSidebar(); applyPaneVisibility(); closeDrawer();
+}
+function closeCodebase() {
+  activeCodebaseId = null; currentCb = null; try { localStorage.removeItem('mt_active_codebase'); } catch (e) {}
+  renderSidebar(); applyPaneVisibility();
+}
+function renderCbWorkspace() {
+  if (!currentCb) return;
+  els.cbName.value = currentCb.name || 'Untitled codebase';
+  const m = currentCb.models || {};
+  els.cbModels.textContent = (m.builder || '?') + (currentCb.reviewerEnabled !== false ? ' + ' + (m.reviewer || '?') : ' · solo');
+  cbRenderTree(); cbRenderChat();
+  if (currentCb.files.length) openCbFile(currentCb.files[0].path);
+  else { cbActivePath = null; els.cbEdit.value = ''; els.cbEditPath.textContent = 'No file open'; }
+  cbShowErr(''); cbSetStatus('');
+  els.codebasePane.classList.toggle('cb-readonly', !!cbReadOnly);
+  els.cbEdit.readOnly = !!cbReadOnly;
+  if (cbReadOnly) {
+    const banner = document.createElement('div'); banner.className = 'cb-readonly-banner';
+    const txt = document.createElement('span'); txt.textContent = 'Viewing a shared codebase (read-only).';
+    const imp = document.createElement('button'); imp.className = 'cb-btn'; imp.type = 'button'; imp.textContent = 'Import a copy'; imp.addEventListener('click', cbImportShared);
+    const dl = document.createElement('button'); dl.className = 'cb-btn'; dl.type = 'button'; dl.textContent = 'Download ZIP'; dl.addEventListener('click', () => cbDownloadZip(currentCb));
+    banner.append(txt, imp, dl); els.cbThread.prepend(banner);
+  }
+}
+function cbRenderTree() {
+  els.cbTree.innerHTML = '';
+  if (!currentCb || !currentCb.files.length) { els.cbTree.innerHTML = '<div class="cb-tree-empty">No files yet</div>'; return; }
+  const root = { dirs: {}, files: [] };
+  for (const f of currentCb.files) {
+    const parts = f.path.split('/'); let node = root;
+    for (let i = 0; i < parts.length - 1; i++) { const d = parts[i]; node.dirs[d] = node.dirs[d] || { dirs: {}, files: [] }; node = node.dirs[d]; }
+    node.files.push(f);
+  }
+  (function walk(node, depth) {
+    for (const d of Object.keys(node.dirs).sort()) {
+      const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-dir'; row.style.paddingLeft = (8 + depth * 12) + 'px'; row.textContent = '📁 ' + d;
+      els.cbTree.appendChild(row); walk(node.dirs[d], depth + 1);
+    }
+    for (const f of node.files.sort((a, b) => a.path.localeCompare(b.path))) {
+      const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-file' + (f.path === cbActivePath ? ' active' : ''); row.style.paddingLeft = (8 + depth * 12) + 'px';
+      const nm = document.createElement('span'); nm.className = 'cb-tree-name'; nm.textContent = f.path.split('/').pop();
+      const x = document.createElement('button'); x.className = 'cb-tree-x'; x.type = 'button'; x.textContent = '✕'; x.title = 'Delete';
+      x.addEventListener('click', (e) => { e.stopPropagation(); if (confirm('Delete ' + f.path + '?')) cbToolDelete(f.path); });
+      row.append(nm, x); row.addEventListener('click', () => openCbFile(f.path)); els.cbTree.appendChild(row);
+    }
+  })(root, 0);
+}
+function openCbFile(path) {
+  cbActivePath = path; const f = cbGetFile(path);
+  els.cbEdit.value = f ? f.content : ''; els.cbEditPath.textContent = path; els.cbEdit.disabled = false; cbRenderTree();
+}
+function cbRefreshEditor() { if (!cbActivePath) return; const f = cbGetFile(cbActivePath); if (f && document.activeElement !== els.cbEdit) els.cbEdit.value = f.content; }
+function cbNewFile() {
+  if (!currentCb) return;
+  const p = prompt('New file path', 'untitled.txt'); if (!p) return;
+  const r = cbToolWrite(p, ''); if (r.indexOf('Error') === 0) { alert(r); return; }
+  const n = cbNormPath(p); openCbFile(n.path);
+}
+function cbAddMsg(author, model) {
+  const wrap = document.createElement('div'); wrap.className = 'cb-msg cb-msg-' + author;
+  const head = document.createElement('div'); head.className = 'cb-msg-head';
+  head.textContent = (author === 'builder' ? 'Builder' : author === 'reviewer' ? 'Reviewer' : 'You') + (model ? ' · ' + model : '');
+  const col = document.createElement('div'); col.className = 'cb-msg-col';
+  const bubble = document.createElement('div'); bubble.className = 'bubble plain';
+  const typing = document.createElement('span'); typing.className = 'typing'; typing.innerHTML = '<span></span><span></span><span></span>';
+  bubble.appendChild(typing); col.appendChild(bubble);
+  wrap.append(head, col); els.cbThread.appendChild(wrap);
+  const scroll = () => { els.cbThread.scrollTop = els.cbThread.scrollHeight; };
+  scroll();
+  let started = false;
+  return {
+    bubble, scroll,
+    clearTyping() { if (typing.parentElement) typing.remove(); },
+    setText(t) { if (!started) { started = true; if (typing.parentElement) typing.remove(); } bubble.textContent = t; scroll(); },
+    addToolCall(name, argsText) {
+      const el = document.createElement('details'); el.className = 'toolcall';
+      const sum = document.createElement('summary'); sum.innerHTML = '🔧 <span class="tc-name"></span> <span class="tc-status">running…</span>';
+      sum.querySelector('.tc-name').textContent = name;
+      const body = document.createElement('div'); body.className = 'tc-body';
+      const ap = document.createElement('pre'); ap.className = 'tc-args'; ap.textContent = argsText;
+      const rp = document.createElement('pre'); rp.className = 'tc-result';
+      body.append(ap, rp); el.append(sum, body); col.insertBefore(el, bubble); scroll();
+      return {
+        setResult(t) { rp.textContent = t; sum.querySelector('.tc-status').textContent = 'done'; scroll(); },
+        setError(t) { rp.textContent = t; rp.classList.add('tc-err'); sum.querySelector('.tc-status').textContent = 'error'; scroll(); },
+      };
+    },
+    finalize(t) { if (typing.parentElement) typing.remove(); if (t) { renderAssistantHTML(bubble, t); bubble.dataset.raw = t; } else if (!bubble.textContent) bubble.textContent = '…'; scroll(); },
+  };
+}
+function cbRenderChat() {
+  els.cbThread.innerHTML = '';
+  for (const m of (currentCb.messages || [])) {
+    if (m.role === 'user') { cbAddMsg('user', null).finalize(m.content); }
+    else if (m.role === 'assistant') {
+      const author = m.author || 'builder';
+      const model = author === 'reviewer' ? (currentCb.models && currentCb.models.reviewer) : (currentCb.models && currentCb.models.builder);
+      const n = cbAddMsg(author, model);
+      if (m.toolRounds) for (const tr of m.toolRounds) { const ui = n.addToolCall(tr.name || 'tool', JSON.stringify(tr.args || {}, null, 2)); ui.setResult(String(tr.result == null ? '' : tr.result)); }
+      n.finalize(m.content);
+    }
+  }
+}
+function renderCodebasesView() {
+  if (activeCodebaseId) {
+    const cb = getCodebase(activeCodebaseId);
+    if (cb) {
+      const back = document.createElement('button'); back.className = 'proj-back'; back.type = 'button'; back.textContent = '‹ Codebases';
+      back.addEventListener('click', closeCodebase); els.convList.appendChild(back);
+      const head = document.createElement('div'); head.className = 'proj-head';
+      const nm = document.createElement('span'); nm.className = 'proj-head-name'; nm.textContent = cb.name;
+      const ed = document.createElement('button'); ed.className = 'proj-edit'; ed.type = 'button'; ed.textContent = 'Settings ⚙';
+      ed.addEventListener('click', () => openCodebaseModal(cb.id));
+      head.append(nm, ed); els.convList.appendChild(head);
+      const info = document.createElement('div'); info.className = 'conv-empty';
+      info.textContent = cb.files.length + (cb.files.length === 1 ? ' file' : ' files') + ' · ' + fmtBytes(cbTotalBytes(cb));
+      els.convList.appendChild(info);
+      return;
+    }
+    activeCodebaseId = null;
+  }
+  const list = loadCodebases().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (!list.length) { els.convList.innerHTML = '<div class="conv-empty">No codebases yet. Create one with + New codebase.</div>'; return; }
+  for (const c of list) {
+    const row = document.createElement('div'); row.className = 'proj-row';
+    const nm = document.createElement('div'); nm.className = 'proj-row-name'; nm.textContent = c.name;
+    const meta = document.createElement('div'); meta.className = 'proj-row-meta'; meta.textContent = (c.fileCount || 0) + ((c.fileCount || 0) === 1 ? ' file' : ' files');
+    row.append(nm, meta); row.addEventListener('click', () => { setSideView('codebases'); openCodebase(c.id); });
+    els.convList.appendChild(row);
+  }
+}
+
+/* ---- create / settings modal ---- */
+function openCodebaseModal(id) {
+  cbEditingId = id || null;
+  const cb = id ? getCodebase(id) : null;
+  const list = debateModelList();
+  const fill = (sel, val) => {
+    sel.innerHTML = '';
+    for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m; sel.appendChild(o); }
+    if (val && !list.includes(val)) { const o = document.createElement('option'); o.value = val; o.textContent = val + ' (not in your list)'; sel.appendChild(o); }
+    sel.value = val || list[0] || '';
+  };
+  const def = cbDefaultModels();
+  const models = (cb && cb.models) || def;
+  fill(els.cbmBuilder, models.builder || def.builder);
+  fill(els.cbmReviewer, models.reviewer || def.reviewer);
+  els.cbmName.value = cb ? cb.name : '';
+  els.cbmReviewerOn.checked = cb ? (cb.reviewerEnabled !== false) : true;
+  els.cbmReviewer.disabled = !els.cbmReviewerOn.checked;
+  els.cbmRounds.value = cb ? (cb.rounds || 2) : 2; els.cbmRoundsVal.textContent = '· ' + els.cbmRounds.value;
+  els.cbmTitle.textContent = cb ? 'Codebase settings' : 'New codebase';
+  els.cbmSave.textContent = cb ? 'Save' : 'Create codebase';
+  els.cbmDelete.style.display = cb ? '' : 'none';
+  els.codebaseModal.classList.remove('hidden');
+  els.cbmName.focus();
+}
+function closeCodebaseModal() { els.codebaseModal.classList.add('hidden'); cbEditingId = null; }
+function saveCodebaseFromModal() {
+  const name = els.cbmName.value.trim() || 'Untitled codebase';
+  const models = { builder: els.cbmBuilder.value, reviewer: els.cbmReviewer.value };
+  const reviewerEnabled = els.cbmReviewerOn.checked;
+  const rounds = Math.max(1, Math.min(4, parseInt(els.cbmRounds.value, 10) || 2));
+  if (cbEditingId) {
+    const cb = getCodebase(cbEditingId); if (!cb) { closeCodebaseModal(); return; }
+    cb.name = name; cb.models = models; cb.reviewerEnabled = reviewerEnabled; cb.rounds = rounds;
+    cbStore.save(cb);
+    if (currentCb && currentCb.id === cb.id) { currentCb = cb; renderCbWorkspace(); }
+    closeCodebaseModal(); renderSidebar(); return;
+  }
+  const now = Date.now();
+  const cb = { id: uid(), name, files: [], messages: [], models, reviewerEnabled, rounds, createdAt: now, updatedAt: now };
+  cbStore.save(cb); closeCodebaseModal(); setSideView('codebases'); openCodebase(cb.id);
+}
+function deleteCodebaseFromModal() {
+  if (!cbEditingId) return;
+  if (!confirm('Delete this codebase and all its files? This cannot be undone.')) return;
+  const id = cbEditingId; cbStore.remove(id);
+  if (activeCodebaseId === id) closeCodebase();
+  closeCodebaseModal(); renderSidebar();
+}
+
+/* ---- export: ZIP (dependency-free store-only) + copy ---- */
+function cbCrc32(bytes) {
+  let t = cbCrc32._t;
+  if (!t) { t = cbCrc32._t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = t[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function cbZipBlob(cb) {
+  const enc = new TextEncoder(); const parts = []; const central = []; let offset = 0;
+  const num = (n, bytes) => { const b = new Uint8Array(bytes); let v = n >>> 0; for (let i = 0; i < bytes; i++) { b[i] = v & 0xff; v = Math.floor(v / 256); } return b; };
+  const push = (arr) => { parts.push(arr); offset += arr.length; };
+  for (const f of (cb.files || [])) {
+    const name = enc.encode(f.path); const data = enc.encode(f.content || ''); const crc = cbCrc32(data); const localOffset = offset;
+    push(num(0x04034b50, 4)); push(num(20, 2)); push(num(0, 2)); push(num(0, 2)); push(num(0, 2)); push(num(0, 2));
+    push(num(crc, 4)); push(num(data.length, 4)); push(num(data.length, 4)); push(num(name.length, 2)); push(num(0, 2)); push(name); push(data);
+    central.push({ name, crc, len: data.length, localOffset });
+  }
+  const cdStart = offset;
+  for (const c of central) {
+    push(num(0x02014b50, 4)); push(num(20, 2)); push(num(20, 2)); push(num(0, 2)); push(num(0, 2)); push(num(0, 2)); push(num(0, 2));
+    push(num(c.crc, 4)); push(num(c.len, 4)); push(num(c.len, 4)); push(num(c.name.length, 2)); push(num(0, 2)); push(num(0, 2)); push(num(0, 2)); push(num(0, 2)); push(num(0, 4)); push(num(c.localOffset, 4)); push(c.name);
+  }
+  const cdSize = offset - cdStart;
+  push(num(0x06054b50, 4)); push(num(0, 2)); push(num(0, 2)); push(num(central.length, 2)); push(num(central.length, 2)); push(num(cdSize, 4)); push(num(cdStart, 4)); push(num(0, 2));
+  return new Blob(parts, { type: 'application/zip' });
+}
+function cbDownloadZip(cb) {
+  if (!cb) return;
+  if (!cb.files.length) { toast('No files to export yet.'); return; }
+  const blob = cbZipBlob(cb); const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = (cb.name || 'codebase').replace(/[^\w.-]+/g, '_') + '.zip';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+async function shareCodebase() {
+  if (!currentCb) return;
+  if (!currentCb.files.length) { toast('Add files before sharing.'); return; }
+  toast('Creating share link…');
+  try {
+    const slim = { name: currentCb.name, files: currentCb.files.map((f) => ({ path: f.path, content: f.content })), models: currentCb.models };
+    const resp = await fetch('/api/codebase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(slim) });
+    const d = await resp.json().catch(() => ({}));
+    if (resp.ok && d.id) {
+      const link = location.origin + '/c/' + d.id;
+      try { await navigator.clipboard.writeText(link); toast('Share link copied: ' + link); }
+      catch (e) { toast('Share link: ' + link); }
+      return;
+    }
+    toast((resp.status === 413 ? 'Too large to share' : 'Could not create link') + ' — downloading ZIP instead.');
+    cbDownloadZip(currentCb);
+  } catch (e) { toast('Share failed — downloading ZIP instead.'); cbDownloadZip(currentCb); }
+}
+// Read-only viewer for a /c/<id> shared codebase.
+async function maybeOpenSharedCodebase() {
+  const m = location.pathname.match(/^\/c\/([A-Za-z0-9_-]+)$/);
+  if (!m) return false;
+  try {
+    const resp = await fetch('/api/codebase/' + encodeURIComponent(m[1]));
+    const rec = await resp.json().catch(() => null);
+    try { history.replaceState(null, '', '/'); } catch (e) {}
+    if (resp.ok && rec && Array.isArray(rec.files)) { openSharedCodebase(rec); return true; }
+  } catch (e) {}
+  return false;
+}
+function openSharedCodebase(rec) {
+  showApp(true);
+  setSideView('codebases');
+  cbReadOnly = true;
+  currentCb = { id: 'shared-' + Date.now(), name: rec.name || 'Shared codebase', files: (rec.files || []).map((f) => ({ path: f.path, content: f.content, updatedAt: Date.now() })), messages: [], models: rec.models || {}, reviewerEnabled: false, rounds: 2 };
+  activeCodebaseId = currentCb.id; cbActivePath = null;
+  renderCbWorkspace(); renderSidebar(); applyPaneVisibility();
+}
+function cbImportShared() {
+  if (!currentCb) return;
+  const now = Date.now();
+  const models = (currentCb.models && currentCb.models.builder) ? currentCb.models : cbDefaultModels();
+  const cb = { id: uid(), name: (currentCb.name || 'Shared codebase') + ' (copy)', files: currentCb.files.map((f) => ({ path: f.path, content: f.content, updatedAt: now })), messages: [], models, reviewerEnabled: true, rounds: 2, createdAt: now, updatedAt: now };
+  if (!cbStore.save(cb)) return;
+  cbReadOnly = false; setSideView('codebases'); openCodebase(cb.id); toast('Imported a copy you can edit.');
+}
+/* ---- export: push to GitHub (browser-direct, Git Data API) ---- */
+async function ghReq(method, path, body) {
+  const r = await fetch('https://api.github.com' + path, { method, headers: { ...ghHeaders(), 'content-type': 'application/json' }, body: body != null ? JSON.stringify(body) : undefined });
+  if (!r.ok) { const e = new Error('GitHub ' + r.status); e.status = r.status; try { e.detail = (await r.json()).message; } catch (_) {} throw e; }
+  return r.json();
+}
+function ghB64(str) { return btoa(unescape(encodeURIComponent(str || ''))); }
+function cbghErr(t) { els.cbghGateErr.textContent = t || ''; els.cbghGateErr.style.display = t ? 'block' : 'none'; }
+function cbghSetStatus(t) { els.cbghStatus.textContent = t || ''; }
+function cbghToggleGate() {
+  const connected = !!GH.token;
+  els.cbghGate.classList.toggle('hidden', connected);
+  els.cbghForm.classList.toggle('hidden', !connected);
+  els.cbghUser.textContent = GH.login ? '· @' + GH.login : '';
+}
+function pushCodebaseToGithub() {
+  if (!currentCb) return;
+  if (!currentCb.files.length) { toast('Add files before pushing.'); return; }
+  const slug = (currentCb.name || 'codebase').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'codebase';
+  els.cbghRepo.value = (GH.login ? GH.login + '/' : '') + slug;
+  els.cbghBranch.value = 'main';
+  els.cbghMsg.value = 'Update from Mantic Think: ' + (currentCb.name || 'codebase');
+  els.cbghCreate.checked = false; els.cbghForce.checked = false; els.cbghToken.value = '';
+  cbghErr(''); cbghSetStatus(''); cbghToggleGate();
+  els.cbGithubModal.classList.remove('hidden');
+}
+async function cbghConnect() {
+  const tok = els.cbghToken.value.trim(); if (!tok) { cbghErr('Enter a token.'); return; }
+  els.cbghConnect.disabled = true; els.cbghConnect.textContent = 'Connecting…'; GH.token = tok;
+  try {
+    const me = await ghApi('/user'); GH.login = me.login;
+    try { localStorage.setItem('mt_github_token', tok); localStorage.setItem('mt_github_login', me.login); } catch (e) {}
+    updateGithubBtn(); cbghErr(''); cbghToggleGate();
+    if (els.cbghRepo.value.indexOf('/') < 0) els.cbghRepo.value = GH.login + '/' + els.cbghRepo.value;
+  } catch (e) { GH.token = ''; cbghErr(e.status === 401 ? 'Token rejected.' : ('Could not connect' + (e.detail ? ': ' + e.detail : '.'))); }
+  finally { els.cbghConnect.disabled = false; els.cbghConnect.textContent = 'Connect'; }
+}
+async function cbghPushNow() {
+  if (!currentCb || !GH.token) return;
+  const full = els.cbghRepo.value.trim().replace(/^\/+|\/+$/g, '');
+  const m = full.match(/^([^/]+)\/([^/]+)$/); if (!m) { cbghSetStatus('Enter the repository as owner/repo.'); return; }
+  const owner = m[1], repo = m[2];
+  const branch = els.cbghBranch.value.trim() || 'main';
+  const message = els.cbghMsg.value.trim() || 'Update from Mantic Think';
+  const create = els.cbghCreate.checked, force = els.cbghForce.checked;
+  els.cbghPush.disabled = true;
+  try {
+    cbghSetStatus('Checking repository…');
+    let repoInfo = null;
+    try { repoInfo = await ghApi('/repos/' + owner + '/' + repo); }
+    catch (e) {
+      if (e.status === 404 && create) { cbghSetStatus('Creating private repo…'); repoInfo = await ghReq('POST', '/user/repos', { name: repo, private: true, auto_init: true }); }
+      else if (e.status === 404) { cbghSetStatus('Repo not found — tick "Create" to make it.'); els.cbghPush.disabled = false; return; }
+      else throw e;
+    }
+    const defBranch = repoInfo.default_branch || 'main';
+    let targetExists = true, baseSha = null;
+    try { const ref = await ghApi('/repos/' + owner + '/' + repo + '/git/ref/heads/' + encodeURIComponent(branch)); baseSha = ref.object.sha; }
+    catch (e) {
+      if (e.status === 404) { targetExists = false; const ref = await ghApi('/repos/' + owner + '/' + repo + '/git/ref/heads/' + encodeURIComponent(defBranch)); baseSha = ref.object.sha; }
+      else throw e;
+    }
+    const baseCommit = await ghApi('/repos/' + owner + '/' + repo + '/git/commits/' + baseSha);
+    cbghSetStatus('Uploading ' + currentCb.files.length + ' files…');
+    const treeItems = [];
+    for (const f of currentCb.files) {
+      const blob = await ghReq('POST', '/repos/' + owner + '/' + repo + '/git/blobs', { content: ghB64(f.content), encoding: 'base64' });
+      treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: blob.sha });
+    }
+    cbghSetStatus('Creating commit…');
+    const newTree = await ghReq('POST', '/repos/' + owner + '/' + repo + '/git/trees', { base_tree: baseCommit.tree.sha, tree: treeItems });
+    const newCommit = await ghReq('POST', '/repos/' + owner + '/' + repo + '/git/commits', { message, tree: newTree.sha, parents: [baseSha] });
+    if (targetExists) await ghReq('PATCH', '/repos/' + owner + '/' + repo + '/git/refs/heads/' + encodeURIComponent(branch), { sha: newCommit.sha, force });
+    else await ghReq('POST', '/repos/' + owner + '/' + repo + '/git/refs', { ref: 'refs/heads/' + branch, sha: newCommit.sha });
+    const commitUrl = (repoInfo.html_url || ('https://github.com/' + owner + '/' + repo)) + '/commit/' + newCommit.sha;
+    cbghSetStatus('Pushed ✓');
+    toast('Pushed to ' + owner + '/' + repo + ' @ ' + branch);
+    try { window.open(commitUrl, '_blank', 'noopener'); } catch (e) {}
+    setTimeout(() => els.cbGithubModal.classList.add('hidden'), 900);
+  } catch (e) {
+    if (e.status === 403) cbghSetStatus('Push failed (403) — your token lacks write access (needs Contents: write).');
+    else if (e.status === 422) cbghSetStatus('Push rejected (422) — the branch moved. Tick "Force push" to overwrite, or pull first.');
+    else cbghSetStatus('Push failed: ' + (e.detail || e.message || e));
+  } finally { els.cbghPush.disabled = false; }
+}
+els.cbghClose.addEventListener('click', () => els.cbGithubModal.classList.add('hidden'));
+els.cbghCancel.addEventListener('click', () => els.cbGithubModal.classList.add('hidden'));
+els.cbGithubModal.addEventListener('click', (e) => { if (e.target === els.cbGithubModal) els.cbGithubModal.classList.add('hidden'); });
+els.cbghConnect.addEventListener('click', cbghConnect);
+els.cbghPush.addEventListener('click', cbghPushNow);
+els.cbghDisconnect.addEventListener('click', () => { disconnectGithub(); cbghToggleGate(); });
+
+/* ---- workspace event wiring ---- */
+function cbAutosize() { els.cbInput.style.height = 'auto'; els.cbInput.style.height = Math.min(els.cbInput.scrollHeight, 160) + 'px'; }
+els.cbBack.addEventListener('click', closeCodebase);
+els.cbNewFile.addEventListener('click', cbNewFile);
+els.cbStop.addEventListener('click', () => { if (cbController) cbController.abort(); });
+els.cbSettingsBtn.addEventListener('click', () => { if (currentCb) openCodebaseModal(currentCb.id); });
+els.cbSend.addEventListener('click', () => { const t = els.cbInput.value; els.cbInput.value = ''; cbAutosize(); cbRunBuild(t); });
+els.cbInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); els.cbSend.click(); } });
+els.cbInput.addEventListener('input', cbAutosize);
+els.cbName.addEventListener('change', () => { if (!currentCb) return; currentCb.name = els.cbName.value.trim() || 'Untitled codebase'; cbStore.save(currentCb); renderCbWorkspace(); renderSidebar(); });
+els.cbEdit.addEventListener('input', () => {
+  if (!currentCb || !cbActivePath) return;
+  const f = cbGetFile(cbActivePath); if (f) { f.content = els.cbEdit.value; f.updatedAt = Date.now(); }
+  clearTimeout(cbEditTimer); cbEditTimer = setTimeout(() => { cbStore.save(currentCb); renderSidebar(); }, 500);
+});
+els.cbCopyFile.addEventListener('click', () => {
+  if (!cbActivePath) return; const f = cbGetFile(cbActivePath); if (!f) return;
+  navigator.clipboard.writeText(f.content || ''); els.cbCopyFile.textContent = 'Copied'; setTimeout(() => els.cbCopyFile.textContent = 'Copy', 1200);
+});
+els.cbExportBtn.addEventListener('click', (e) => { e.stopPropagation(); els.cbExportMenu.classList.toggle('hidden'); });
+document.addEventListener('click', () => els.cbExportMenu.classList.add('hidden'));
+els.cbExportMenu.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  els.cbExportMenu.classList.add('hidden');
+  const act = b.dataset.act;
+  if (act === 'zip') cbDownloadZip(currentCb);
+  else if (act === 'copy') els.cbCopyFile.click();
+  else if (act === 'share') shareCodebase();
+  else if (act === 'github') pushCodebaseToGithub();
+});
+els.cbmClose.addEventListener('click', closeCodebaseModal);
+els.cbmCancel.addEventListener('click', closeCodebaseModal);
+els.codebaseModal.addEventListener('click', (e) => { if (e.target === els.codebaseModal) closeCodebaseModal(); });
+els.cbmSave.addEventListener('click', saveCodebaseFromModal);
+els.cbmDelete.addEventListener('click', deleteCodebaseFromModal);
+els.cbmRounds.addEventListener('input', () => { els.cbmRoundsVal.textContent = '· ' + els.cbmRounds.value; });
+els.cbmReviewerOn.addEventListener('change', () => { els.cbmReviewer.disabled = !els.cbmReviewerOn.checked; });
+
 (async function boot() {
+  if (await maybeOpenSharedCodebase()) return;   // a /c/<id> link opens a read-only codebase viewer
   maybeOpenSharedDebate();   // a /#debate=… link opens the shared debate over the gate/app
   if (els.rememberKey) els.rememberKey.checked = rememberPref();
   if (localMode) {
