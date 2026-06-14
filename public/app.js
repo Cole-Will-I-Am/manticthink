@@ -45,7 +45,8 @@ const els = {
   gate: $('gate'), keyInput: $('keyInput'), gateErr: $('gateErr'), connect: $('connect'), rememberKey: $('rememberKey'),
   connectLocal: $('connectLocal'), localHint: $('localHint'), modeBadge: $('modeBadge'),
   app: $('app'), scrim: $('scrim'), sidebar: $('sidebar'), convList: $('convList'),
-  newChat: $('newChat'), disconnect: $('disconnect'), menuBtn: $('menuBtn'), collapseBtn: $('collapseBtn'),
+  newChat: $('newChat'), newProject: $('newProject'), newCodebase: $('newCodebase'),
+  disconnect: $('disconnect'), menuBtn: $('menuBtn'), collapseBtn: $('collapseBtn'),
   model: $('model'), headerTitle: $('headerTitle'),
   main: $('main'), thread: $('thread'), scrollBtn: $('scrollBtn'),
   input: $('input'), send: $('send'), err: $('err'),
@@ -485,26 +486,54 @@ function setActiveProject(id) {
   openMostRecentOrNew();   // enter the workspace scope (renders sidebar)
 }
 
-function renderProjects() {
+// Three top-level section tabs (Chats / Projects / Codebases).
+function renderSideTabs() {
   const bar = els.projectBar; if (!bar) return;
   if (activeProjectId && !getProject(activeProjectId)) activeProjectId = null;
-  const projects = loadProjects().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   bar.innerHTML = '';
-  const mkPill = (label, id) => {
-    const b = document.createElement('button'); b.className = 'proj-pill' + (activeProjectId === id ? ' active' : '');
-    b.type = 'button'; b.textContent = label; b.title = label;
-    b.addEventListener('click', () => setActiveProject(id));
-    return b;
-  };
-  bar.appendChild(mkPill('All chats', null));
-  for (const p of projects) bar.appendChild(mkPill(p.name, p.id));
-  const add = document.createElement('button'); add.className = 'proj-add'; add.type = 'button'; add.textContent = '+'; add.title = 'New project';
-  add.addEventListener('click', () => openProjectEditor(null));
-  bar.appendChild(add);
-  if (activeProjectId) {
-    const ed = document.createElement('button'); ed.className = 'proj-edit'; ed.type = 'button'; ed.textContent = 'Edit project ⚙';
+  for (const [key, label] of [['chats', 'Chats'], ['projects', 'Projects'], ['codebases', 'Codebases']]) {
+    const b = document.createElement('button');
+    b.className = 'side-tab' + (sideView === key ? ' active' : '');
+    b.type = 'button'; b.textContent = label;
+    b.addEventListener('click', () => switchSideView(key));
+    bar.appendChild(b);
+  }
+}
+
+function switchSideView(v) {
+  setSideView(v);
+  if (v === 'chats') { setActiveProject(null); return; }  // leave any project scope, show all chats
+  renderSidebar();
+}
+
+// Body of the Projects tab: a list of projects, or — when one is open — that
+// project's chats with a back link.
+function renderProjectsView() {
+  const active = activeProjectId ? getProject(activeProjectId) : null;
+  if (active) {
+    const back = document.createElement('button'); back.className = 'proj-back'; back.type = 'button'; back.textContent = '‹ Projects';
+    back.addEventListener('click', () => { activeProjectId = null; try { localStorage.removeItem('mt_active_project'); } catch (e) {} renderSidebar(); });
+    els.convList.appendChild(back);
+    const head = document.createElement('div'); head.className = 'proj-head';
+    const nm = document.createElement('span'); nm.className = 'proj-head-name'; nm.textContent = active.name;
+    const ed = document.createElement('button'); ed.className = 'proj-edit'; ed.type = 'button'; ed.textContent = 'Edit ⚙';
     ed.addEventListener('click', () => openProjectEditor(activeProjectId));
-    bar.appendChild(ed);
+    head.append(nm, ed); els.convList.appendChild(head);
+    const chats = store.list().filter((c) => c.projectId === activeProjectId);
+    if (!chats.length) { const e = document.createElement('div'); e.className = 'conv-empty'; e.textContent = 'No chats in this project yet.'; els.convList.appendChild(e); }
+    for (const c of chats) els.convList.appendChild(convRow(c));
+    return;
+  }
+  const projects = loadProjects().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (!projects.length) { els.convList.innerHTML = '<div class="conv-empty">No projects yet. Create one with + New project.</div>'; return; }
+  for (const p of projects) {
+    const cnt = store.list().filter((c) => c.projectId === p.id).length;
+    const row = document.createElement('div'); row.className = 'proj-row';
+    const nm = document.createElement('div'); nm.className = 'proj-row-name'; nm.textContent = p.name;
+    const meta = document.createElement('div'); meta.className = 'proj-row-meta'; meta.textContent = cnt + (cnt === 1 ? ' chat' : ' chats');
+    row.append(nm, meta);
+    row.addEventListener('click', () => { setSideView('projects'); setActiveProject(p.id); });
+    els.convList.appendChild(row);
   }
 }
 
@@ -563,7 +592,7 @@ function saveProject() {
   try { upsertProject(p); } catch (e) { alert('Could not save — browser storage may be full. Remove some files and try again.'); return; }
   closeProjectEditor();
   if (existing) renderSidebar();   // edited project's context applies on next send
-  else setActiveProject(p.id);     // new project becomes the active scope
+  else { setSideView('projects'); setActiveProject(p.id); }   // land inside the new project
 }
 
 /* ---------- GitHub (BYO token, read-only → context) ---------- */
@@ -775,7 +804,12 @@ let current = null;              // active conversation { id, title, model, mess
 let streaming = false;
 let controller = null;
 let autoFollow = true;
-let activeProjectId = localStorage.getItem('mt_active_project') || null;  // null = All chats
+let activeProjectId = localStorage.getItem('mt_active_project') || null;  // null = not inside a project
+let sideView = localStorage.getItem('mt_side_view') || 'chats';          // 'chats' | 'projects' | 'codebases'
+// Invariant: a project is only "open" while the Projects tab is selected, so a
+// stale scope can never misassign new chats created from the Chats tab.
+if (sideView !== 'projects') activeProjectId = null;
+function setSideView(v) { sideView = v; try { localStorage.setItem('mt_side_view', v); } catch (e) {} }
 
 const SUGGESTIONS = [
   'Explain quantum entanglement simply',
@@ -1550,30 +1584,36 @@ function renderConversation() {
   updateHeaderTitle(); autoFollow = true; scrollDown(true);
 }
 
+// Build one conversation row (shared by the Chats tab and the in-project list).
+function convRow(c) {
+  const row = document.createElement('div');
+  row.className = 'conv-row' + (current && c.id === current.id ? ' active' : '');
+  const title = document.createElement('div'); title.className = 'conv-title'; title.textContent = c.title || 'Untitled';
+  const time = document.createElement('div'); time.className = 'conv-time'; time.textContent = relTime(c.updatedAt);
+  const acts = document.createElement('div'); acts.className = 'conv-actions';
+  const ren = document.createElement('button'); ren.className = 'conv-act'; ren.type = 'button'; ren.textContent = '✎'; ren.title = 'Rename';
+  ren.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const nt = prompt('Rename conversation', c.title || '');
+    if (nt && nt.trim()) { store.rename(c.id, nt.trim()); if (current && current.id === c.id) { current.title = nt.trim(); updateHeaderTitle(); } renderSidebar(); }
+  });
+  const del = document.createElement('button'); del.className = 'conv-act del'; del.type = 'button'; del.textContent = '✕'; del.title = 'Delete';
+  del.addEventListener('click', (ev) => { ev.stopPropagation(); if (confirm('Delete this conversation?')) deleteConversation(c.id); });
+  acts.appendChild(ren); acts.appendChild(del);
+  row.appendChild(title); row.appendChild(time); row.appendChild(acts);
+  row.addEventListener('click', () => { openConversation(c.id); closeDrawer(); });
+  return row;
+}
+
 function renderSidebar() {
-  renderProjects();
-  const list = scopedList();
+  renderSideTabs();
   els.convList.innerHTML = '';
+  if (sideView === 'codebases') { els.convList.innerHTML = '<div class="conv-empty">Codebases are coming soon.</div>'; return; }
+  if (sideView === 'projects') { renderProjectsView(); return; }
+  // Chats tab: every conversation, regardless of project.
+  const list = store.list();
   if (!list.length) { els.convList.innerHTML = '<div class="conv-empty">No conversations yet</div>'; return; }
-  for (const c of list) {
-    const row = document.createElement('div');
-    row.className = 'conv-row' + (current && c.id === current.id ? ' active' : '');
-    const title = document.createElement('div'); title.className = 'conv-title'; title.textContent = c.title || 'Untitled';
-    const time = document.createElement('div'); time.className = 'conv-time'; time.textContent = relTime(c.updatedAt);
-    const acts = document.createElement('div'); acts.className = 'conv-actions';
-    const ren = document.createElement('button'); ren.className = 'conv-act'; ren.type = 'button'; ren.textContent = '✎'; ren.title = 'Rename';
-    ren.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      const nt = prompt('Rename conversation', c.title || '');
-      if (nt && nt.trim()) { store.rename(c.id, nt.trim()); if (current && current.id === c.id) { current.title = nt.trim(); updateHeaderTitle(); } renderSidebar(); }
-    });
-    const del = document.createElement('button'); del.className = 'conv-act del'; del.type = 'button'; del.textContent = '✕'; del.title = 'Delete';
-    del.addEventListener('click', (ev) => { ev.stopPropagation(); if (confirm('Delete this conversation?')) deleteConversation(c.id); });
-    acts.appendChild(ren); acts.appendChild(del);
-    row.appendChild(title); row.appendChild(time); row.appendChild(acts);
-    row.addEventListener('click', () => { openConversation(c.id); closeDrawer(); });
-    els.convList.appendChild(row);
-  }
+  for (const c of list) els.convList.appendChild(convRow(c));
 }
 
 /* ---------- Tools (function calling, sandboxed) ---------- */
@@ -2124,6 +2164,14 @@ function maybeScroll(force) { scrollDown(force); }
 function openDrawer() { document.body.classList.add('drawer-open'); }
 function closeDrawer() { document.body.classList.remove('drawer-open'); }
 
+let toastTimer = null;
+function toast(msg) {
+  let t = document.getElementById('mtToast');
+  if (!t) { t = document.createElement('div'); t.id = 'mtToast'; t.className = 'mt-toast'; document.body.appendChild(t); }
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
 // Desktop-only: collapse the sidebar to reclaim chat width (persisted).
 const SIDEBAR_KEY = 'mt_sidebar_collapsed';
 const desktopMq = window.matchMedia('(min-width: 761px)');
@@ -2602,6 +2650,9 @@ if (els.connectLocal) els.connectLocal.addEventListener('click', connectLocal);
 els.keyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
 els.disconnect.addEventListener('click', disconnect);
 els.newChat.addEventListener('click', () => { newConversation(); closeDrawer(); });
+els.newProject.addEventListener('click', () => { openProjectEditor(null); closeDrawer(); });
+// Codebases: dedicated feature still being designed — placeholder for now.
+els.newCodebase.addEventListener('click', () => { toast('Codebases are coming soon.'); });
 // On desktop the ☰ (revealed only when collapsed) re-expands the sidebar; on
 // phones it opens the drawer as before.
 els.menuBtn.addEventListener('click', () => { if (desktopMq.matches) toggleSidebar(); else openDrawer(); });
