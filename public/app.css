@@ -971,7 +971,18 @@ textarea#input:focus { border-color: rgba(97,121,255,0.45); box-shadow: inset 0 
 .cb-tree-row:hover .cb-tree-x { opacity: 1; }
 .cb-tree-x:hover { color: var(--danger); }
 .cb-edit-path { font-family: var(--mono); text-transform: none; letter-spacing: 0; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cb-edit-area { flex: 1; min-height: 0; resize: none; border: none; outline: none; background: var(--surface-2); color: var(--text-primary); font-family: var(--mono); font-size: 12.5px; line-height: 1.6; padding: 14px 16px; tab-size: 2; white-space: pre; overflow: auto; }
+.cb-edit-wrap { position: relative; flex: 1; min-height: 0; background: var(--surface-2); }
+.cb-edit-hl, .cb-edit-area {
+  position: absolute; inset: 0; margin: 0; border: 0;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.6; letter-spacing: normal;
+  padding: 14px 16px; tab-size: 2; white-space: pre; word-wrap: normal;
+}
+.cb-edit-hl { z-index: 0; overflow: auto; pointer-events: none; background: transparent; scrollbar-width: none; }
+.cb-edit-hl::-webkit-scrollbar { display: none; }
+.cb-edit-hl code { font: inherit; display: block; background: none; padding: 0; }
+.cb-edit-area { z-index: 1; resize: none; outline: none; overflow: auto; background: transparent; color: transparent; caret-color: var(--text-primary); }
+.cb-edit-area::selection { background: rgba(97,121,255,0.30); }
+.cb-edit-area::placeholder { color: var(--text-tertiary); }
 .cb-chat { background: var(--bg-secondary); }
 .cb-thread { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 .cb-msg { display: flex; flex-direction: column; gap: 5px; }

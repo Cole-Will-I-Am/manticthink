@@ -91,7 +91,7 @@ const els = {
   chatPane: $('chatPane'), codebasePane: $('codebasePane'),
   cbBack: $('cbBack'), cbName: $('cbName'), cbModels: $('cbModels'), cbStatus: $('cbStatus'), cbStop: $('cbStop'),
   cbExportBtn: $('cbExportBtn'), cbExportMenu: $('cbExportMenu'), cbSettingsBtn: $('cbSettingsBtn'),
-  cbNewFile: $('cbNewFile'), cbTree: $('cbTree'), cbEditPath: $('cbEditPath'), cbCopyFile: $('cbCopyFile'), cbEdit: $('cbEdit'),
+  cbNewFile: $('cbNewFile'), cbTree: $('cbTree'), cbEditPath: $('cbEditPath'), cbCopyFile: $('cbCopyFile'), cbEdit: $('cbEdit'), cbHl: $('cbHl'),
   cbThread: $('cbThread'), cbErr: $('cbErr'), cbInput: $('cbInput'), cbSend: $('cbSend'),
   codebaseModal: $('codebaseModal'), cbmTitle: $('cbmTitle'), cbmClose: $('cbmClose'), cbmName: $('cbmName'),
   cbmBuilder: $('cbmBuilder'), cbmReviewer: $('cbmReviewer'), cbmReviewerOn: $('cbmReviewerOn'),
@@ -3199,14 +3199,34 @@ function cbRenderTree() {
   })(root, 0, '');
 }
 function cbToggleFolder(full) { if (cbCollapsed.has(full)) cbCollapsed.delete(full); else cbCollapsed.add(full); cbRenderTree(); }
+
+/* ---- editor syntax highlighting (overlay behind the textarea) ---- */
+const CB_LANGS = { js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', json: 'json', md: 'markdown', markdown: 'markdown', css: 'css', scss: 'scss', html: 'xml', htm: 'xml', xml: 'xml', svg: 'xml', py: 'python', go: 'go', rs: 'rust', rb: 'ruby', java: 'java', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', cs: 'csharp', php: 'php', sh: 'bash', bash: 'bash', sql: 'sql', yml: 'yaml', yaml: 'yaml', toml: 'ini' };
+function cbLangForPath(path) { const ext = ((path || '').split('.').pop() || '').toLowerCase(); return CB_LANGS[ext] || ''; }
+function cbSyncHlScroll() { if (els.cbHl) { els.cbHl.scrollTop = els.cbEdit.scrollTop; els.cbHl.scrollLeft = els.cbEdit.scrollLeft; } }
+function cbHighlight() {
+  const code = els.cbHl && els.cbHl.firstElementChild; if (!code) return;
+  const val = els.cbEdit.value;
+  const lang = cbLangForPath(cbActivePath);
+  // Skip the highlighter for very large files — just mirror plain text.
+  if (val.length > 100000 || !window.hljs || !lang || !hljs.getLanguage(lang)) {
+    code.className = 'hljs'; code.textContent = val + '\n';
+  } else {
+    code.className = 'hljs language-' + lang;
+    code.innerHTML = hljs.highlight(val + '\n', { language: lang, ignoreIllegal: true }).value;
+  }
+  cbSyncHlScroll();
+}
+let cbHlRaf = 0;
+function cbScheduleHighlight() { if (cbHlRaf) return; cbHlRaf = requestAnimationFrame(() => { cbHlRaf = 0; cbHighlight(); }); }
 function openCbFile(path) {
   // Make sure the file is visible: expand all its ancestor folders.
   const parts = path.split('/'); let pre = '';
   for (let i = 0; i < parts.length - 1; i++) { pre += parts[i] + '/'; cbCollapsed.delete(pre); }
   cbActivePath = path; const f = cbGetFile(path);
-  els.cbEdit.value = f ? f.content : ''; els.cbEditPath.textContent = path; els.cbEdit.disabled = false; cbRenderTree();
+  els.cbEdit.value = f ? f.content : ''; els.cbEditPath.textContent = path; els.cbEdit.disabled = false; cbRenderTree(); cbHighlight();
 }
-function cbRefreshEditor() { if (!cbActivePath) return; const f = cbGetFile(cbActivePath); if (f && document.activeElement !== els.cbEdit) els.cbEdit.value = f.content; }
+function cbRefreshEditor() { if (!cbActivePath) return; const f = cbGetFile(cbActivePath); if (f && document.activeElement !== els.cbEdit) { els.cbEdit.value = f.content; cbHighlight(); } }
 function cbNewFile() {
   if (!currentCb) return;
   const p = prompt('New file path', 'untitled.txt'); if (!p) return;
@@ -3521,10 +3541,12 @@ els.cbInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shi
 els.cbInput.addEventListener('input', cbAutosize);
 els.cbName.addEventListener('change', () => { if (!currentCb) return; currentCb.name = els.cbName.value.trim() || 'Untitled codebase'; cbStore.save(currentCb); renderCbWorkspace(); renderSidebar(); });
 els.cbEdit.addEventListener('input', () => {
+  cbScheduleHighlight();
   if (!currentCb || !cbActivePath) return;
   const f = cbGetFile(cbActivePath); if (f) { f.content = els.cbEdit.value; f.updatedAt = Date.now(); }
   clearTimeout(cbEditTimer); cbEditTimer = setTimeout(() => { cbStore.save(currentCb); renderSidebar(); }, 500);
 });
+els.cbEdit.addEventListener('scroll', cbSyncHlScroll);
 els.cbCopyFile.addEventListener('click', () => {
   if (!cbActivePath) return; const f = cbGetFile(cbActivePath); if (!f) return;
   navigator.clipboard.writeText(f.content || ''); els.cbCopyFile.textContent = 'Copied'; setTimeout(() => els.cbCopyFile.textContent = 'Copy', 1200);

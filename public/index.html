@@ -210,7 +210,10 @@
         <div class="cb-splitter" data-split="tree" title="Drag to resize"></div>
         <div class="cb-editor">
           <div class="cb-editor-head"><span id="cbEditPath" class="cb-edit-path">No file open</span><button id="cbCopyFile" class="cb-mini" type="button">Copy</button></div>
-          <textarea id="cbEdit" class="cb-edit-area" spellcheck="false" placeholder="Select a file from the tree, or describe what to build in the chat →"></textarea>
+          <div class="cb-edit-wrap">
+            <pre id="cbHl" class="cb-edit-hl" aria-hidden="true"><code></code></pre>
+            <textarea id="cbEdit" class="cb-edit-area" spellcheck="false" placeholder="Select a file from the tree, or describe what to build in the chat →"></textarea>
+          </div>
         </div>
         <div class="cb-splitter" data-split="chat" title="Drag to resize"></div>
         <div class="cb-chat">
