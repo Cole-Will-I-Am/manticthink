@@ -3137,7 +3137,8 @@ function renderCbWorkspace() {
   if (!currentCb) return;
   els.cbName.value = currentCb.name || 'Untitled codebase';
   const m = currentCb.models || {};
-  els.cbModels.textContent = (m.builder || '?') + (currentCb.reviewerEnabled !== false ? ' + ' + (m.reviewer || '?') : ' · solo');
+  const badge = (model, color) => '<span class="cb-badge"><i style="background:' + color + '"></i>' + escapeHtml(model || '?') + '</span>';
+  els.cbModels.innerHTML = badge(m.builder, 'var(--accent)') + (currentCb.reviewerEnabled !== false ? badge(m.reviewer, 'var(--accent-2)') : '<span class="cb-badge">solo</span>');
   cbRenderTree(); cbRenderChat();
   if (currentCb.files.length) openCbFile(currentCb.files[0].path);
   else { cbActivePath = null; els.cbEdit.value = ''; els.cbEditPath.textContent = 'No file open'; }
@@ -3152,6 +3153,15 @@ function renderCbWorkspace() {
     banner.append(txt, imp, dl); els.cbThread.prepend(banner);
   }
 }
+const CB_FILE_SVG = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.2 1.5H4.5A1.5 1.5 0 0 0 3 3v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 13V5.3L9.2 1.5zM9 2.9 11.6 5.5H9.5A.5.5 0 0 1 9 5V2.9z"/></svg>';
+const CB_DIR_SVG = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v6.5C0 12.22.78 13 1.75 13h12.5A1.75 1.75 0 0 0 16 11.25v-5A1.75 1.75 0 0 0 14.25 4.5H7.8L6.6 3.3A1.75 1.75 0 0 0 5.36 2.85H1.75z"/></svg>';
+function cbFileColor(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const m = { js: '#e8c34a', mjs: '#e8c34a', cjs: '#e8c34a', jsx: '#61dafb', ts: '#3aa0ff', tsx: '#3aa0ff', json: '#d6b04a', md: '#7aa7d6', markdown: '#7aa7d6', css: '#8b6fe6', scss: '#cf6f9b', html: '#e8804d', htm: '#e8804d', py: '#5a9fd4', go: '#42c9d8', rs: '#d8a06a', rb: '#e0584f', java: '#d68a3a', c: '#7aa7d6', h: '#7aa7d6', cpp: '#6f9ee0', cc: '#6f9ee0', cs: '#7a9f5a', php: '#8a8ad6', sh: '#8fd05a', bash: '#8fd05a', sql: '#e0a84a', toml: '#b0764a', yml: '#d65a5a', yaml: '#d65a5a', xml: '#9a9a9a', txt: '#9a9a9a', svg: '#e8804d' };
+  return m[ext] || 'var(--text-tertiary)';
+}
+function cbIconEl(svg, color) { const s = document.createElement('span'); s.className = 'cb-ficon'; s.innerHTML = svg; s.style.color = color; return s; }
+function cbGuides(row, depth) { for (let i = 0; i < depth; i++) { const g = document.createElement('span'); g.className = 'cb-guide'; row.appendChild(g); } }
 function cbRenderTree() {
   els.cbTree.innerHTML = '';
   if (!currentCb || !currentCb.files.length) { els.cbTree.innerHTML = '<div class="cb-tree-empty">No files yet</div>'; return; }
@@ -3163,12 +3173,16 @@ function cbRenderTree() {
   }
   (function walk(node, depth) {
     for (const d of Object.keys(node.dirs).sort()) {
-      const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-dir'; row.style.paddingLeft = (8 + depth * 12) + 'px'; row.textContent = '📁 ' + d;
+      const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-dir';
+      cbGuides(row, depth); row.appendChild(cbIconEl(CB_DIR_SVG, 'var(--text-tertiary)'));
+      const nm = document.createElement('span'); nm.className = 'cb-tree-name'; nm.textContent = d; row.appendChild(nm);
       els.cbTree.appendChild(row); walk(node.dirs[d], depth + 1);
     }
     for (const f of node.files.sort((a, b) => a.path.localeCompare(b.path))) {
-      const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-file' + (f.path === cbActivePath ? ' active' : ''); row.style.paddingLeft = (8 + depth * 12) + 'px';
-      const nm = document.createElement('span'); nm.className = 'cb-tree-name'; nm.textContent = f.path.split('/').pop();
+      const base = f.path.split('/').pop();
+      const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-file' + (f.path === cbActivePath ? ' active' : '');
+      cbGuides(row, depth); row.appendChild(cbIconEl(CB_FILE_SVG, cbFileColor(base)));
+      const nm = document.createElement('span'); nm.className = 'cb-tree-name'; nm.textContent = base;
       const x = document.createElement('button'); x.className = 'cb-tree-x'; x.type = 'button'; x.textContent = '✕'; x.title = 'Delete';
       x.addEventListener('click', (e) => { e.stopPropagation(); if (confirm('Delete ' + f.path + '?')) cbToolDelete(f.path); });
       row.append(nm, x); row.addEventListener('click', () => openCbFile(f.path)); els.cbTree.appendChild(row);
