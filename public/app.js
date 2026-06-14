@@ -3265,7 +3265,9 @@ function cbAddMsg(author, model) {
 }
 function cbRenderChat() {
   els.cbThread.innerHTML = '';
-  for (const m of (currentCb.messages || [])) {
+  const msgs = currentCb.messages || [];
+  if (cbReadOnly && !msgs.length) { els.cbThread.innerHTML = '<div class="cb-chat-empty">This shared codebase didn’t include a build conversation.</div>'; return; }
+  for (const m of msgs) {
     if (m.role === 'user') { cbAddMsg('user', null).finalize(m.content); }
     else if (m.role === 'assistant') {
       const author = m.author || 'builder';
