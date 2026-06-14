@@ -2853,6 +2853,7 @@ let cbController = null;        // AbortController for an in-flight build
 let cbBuilding = false;
 let cbEditingId = null;        // codebase id being edited in the modal
 let cbReadOnly = false;        // true when viewing a shared codebase (/c/<id>)
+let cbCollapsed = new Set();   // collapsed folder paths (e.g. "src/util/")
 
 const cbStore = {
   body: (id) => 'mt_codebase_' + id,
@@ -3124,7 +3125,7 @@ function cbShowErr(t) { if (!els.cbErr) return; els.cbErr.textContent = t || '';
 
 function openCodebase(id) {
   const cb = getCodebase(id); if (!cb) return;
-  cbReadOnly = false;
+  cbReadOnly = false; cbCollapsed = new Set();
   activeCodebaseId = id; try { localStorage.setItem('mt_active_codebase', id); } catch (e) {}
   currentCb = cb; cbActivePath = null;
   renderCbWorkspace(); renderSidebar(); applyPaneVisibility(); closeDrawer();
@@ -3171,25 +3172,37 @@ function cbRenderTree() {
     for (let i = 0; i < parts.length - 1; i++) { const d = parts[i]; node.dirs[d] = node.dirs[d] || { dirs: {}, files: [] }; node = node.dirs[d]; }
     node.files.push(f);
   }
-  (function walk(node, depth) {
+  (function walk(node, depth, prefix) {
     for (const d of Object.keys(node.dirs).sort()) {
+      const full = prefix + d + '/';
+      const collapsed = cbCollapsed.has(full);
       const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-dir';
-      cbGuides(row, depth); row.appendChild(cbIconEl(CB_DIR_SVG, 'var(--text-tertiary)'));
+      cbGuides(row, depth);
+      const chev = document.createElement('span'); chev.className = 'cb-chevron' + (collapsed ? '' : ' open'); chev.textContent = '▸'; row.appendChild(chev);
+      row.appendChild(cbIconEl(CB_DIR_SVG, 'var(--text-tertiary)'));
       const nm = document.createElement('span'); nm.className = 'cb-tree-name'; nm.textContent = d; row.appendChild(nm);
-      els.cbTree.appendChild(row); walk(node.dirs[d], depth + 1);
+      row.addEventListener('click', () => cbToggleFolder(full));
+      els.cbTree.appendChild(row);
+      if (!collapsed) walk(node.dirs[d], depth + 1, full);
     }
     for (const f of node.files.sort((a, b) => a.path.localeCompare(b.path))) {
       const base = f.path.split('/').pop();
       const row = document.createElement('div'); row.className = 'cb-tree-row cb-tree-file' + (f.path === cbActivePath ? ' active' : '');
-      cbGuides(row, depth); row.appendChild(cbIconEl(CB_FILE_SVG, cbFileColor(base)));
+      cbGuides(row, depth);
+      const pad = document.createElement('span'); pad.className = 'cb-chevron'; pad.style.visibility = 'hidden'; pad.textContent = '▸'; row.appendChild(pad);
+      row.appendChild(cbIconEl(CB_FILE_SVG, cbFileColor(base)));
       const nm = document.createElement('span'); nm.className = 'cb-tree-name'; nm.textContent = base;
       const x = document.createElement('button'); x.className = 'cb-tree-x'; x.type = 'button'; x.textContent = '✕'; x.title = 'Delete';
       x.addEventListener('click', (e) => { e.stopPropagation(); if (confirm('Delete ' + f.path + '?')) cbToolDelete(f.path); });
       row.append(nm, x); row.addEventListener('click', () => openCbFile(f.path)); els.cbTree.appendChild(row);
     }
-  })(root, 0);
+  })(root, 0, '');
 }
+function cbToggleFolder(full) { if (cbCollapsed.has(full)) cbCollapsed.delete(full); else cbCollapsed.add(full); cbRenderTree(); }
 function openCbFile(path) {
+  // Make sure the file is visible: expand all its ancestor folders.
+  const parts = path.split('/'); let pre = '';
+  for (let i = 0; i < parts.length - 1; i++) { pre += parts[i] + '/'; cbCollapsed.delete(pre); }
   cbActivePath = path; const f = cbGetFile(path);
   els.cbEdit.value = f ? f.content : ''; els.cbEditPath.textContent = path; els.cbEdit.disabled = false; cbRenderTree();
 }
@@ -3392,7 +3405,7 @@ async function maybeOpenSharedCodebase() {
 function openSharedCodebase(rec) {
   showApp(true);
   setSideView('codebases');
-  cbReadOnly = true;
+  cbReadOnly = true; cbCollapsed = new Set();
   currentCb = { id: 'shared-' + Date.now(), name: rec.name || 'Shared codebase', files: (rec.files || []).map((f) => ({ path: f.path, content: f.content, updatedAt: Date.now() })), messages: [], models: rec.models || {}, reviewerEnabled: false, rounds: 2 };
   activeCodebaseId = currentCb.id; cbActivePath = null;
   renderCbWorkspace(); renderSidebar(); applyPaneVisibility();
