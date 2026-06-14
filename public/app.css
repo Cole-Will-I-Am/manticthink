@@ -989,8 +989,8 @@ textarea#input:focus { border-color: rgba(97,121,255,0.45); box-shadow: inset 0 
 @media (max-width: 860px) {
   .cb-grid { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
   .cb-splitter { display: none; }
-  .cb-tree { max-height: 140px; border-bottom: 0.5px solid var(--border); }
-  .cb-editor { min-height: 180px; border-bottom: 0.5px solid var(--border); }
+  .cb-tree { max-height: 180px; border-bottom: 0.5px solid var(--border); }
+  .cb-editor { min-height: 200px; border-bottom: 0.5px solid var(--border); }
 }
 #codebasePane.cb-readonly .cb-composer { display: none; }
 .cb-readonly-banner { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--accent-soft); border: 0.5px solid var(--border-light); border-radius: 10px; font-size: 12px; color: var(--text-secondary); }
