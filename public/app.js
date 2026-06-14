@@ -513,7 +513,7 @@ function renderSideTabs() {
 
 function switchSideView(v) {
   setSideView(v);
-  if (v !== 'codebases') { activeCodebaseId = null; try { localStorage.removeItem('mt_active_codebase'); } catch (e) {} }
+  if (v !== 'codebases') { activeCodebaseId = null; cbReadOnly = false; try { localStorage.removeItem('mt_active_codebase'); } catch (e) {} }
   if (v === 'chats') { setActiveProject(null); applyPaneVisibility(); return; }  // leave any project scope, show all chats
   renderSidebar();
   applyPaneVisibility();
@@ -3115,7 +3115,7 @@ async function cbRunBuild(text) {
 
 /* ---- workspace UI ---- */
 function applyPaneVisibility() {
-  const showCb = sideView === 'codebases' && !!activeCodebaseId;
+  const showCb = sideView === 'codebases' && (!!activeCodebaseId || cbReadOnly);
   if (els.codebasePane) els.codebasePane.classList.toggle('hidden', !showCb);
   if (els.chatPane) els.chatPane.classList.toggle('hidden', showCb);
 }
@@ -3130,7 +3130,7 @@ function openCodebase(id) {
   renderCbWorkspace(); renderSidebar(); applyPaneVisibility(); closeDrawer();
 }
 function closeCodebase() {
-  activeCodebaseId = null; currentCb = null; try { localStorage.removeItem('mt_active_codebase'); } catch (e) {}
+  activeCodebaseId = null; currentCb = null; cbReadOnly = false; try { localStorage.removeItem('mt_active_codebase'); } catch (e) {}
   renderSidebar(); applyPaneVisibility();
 }
 function renderCbWorkspace() {
@@ -3232,6 +3232,7 @@ function cbRenderChat() {
   }
 }
 function renderCodebasesView() {
+  if (cbReadOnly) { els.convList.innerHTML = '<div class="conv-empty">Viewing a shared codebase.</div>'; return; }
   if (activeCodebaseId) {
     const cb = getCodebase(activeCodebaseId);
     if (cb) {
