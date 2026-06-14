@@ -1556,8 +1556,8 @@ function buildAssistantNode() {
       body.append(ap, rp); el.append(sum, body);
       col.insertBefore(el, bubble); maybeScroll();
       return {
-        setResult(text) { rp.textContent = text; sum.querySelector('.tc-status').textContent = 'done'; maybeScroll(); },
-        setError(text) { rp.textContent = text; rp.classList.add('tc-err'); sum.querySelector('.tc-status').textContent = 'error'; maybeScroll(); },
+        setResult(text) { rp.textContent = text; const s = sum.querySelector('.tc-status'); s.textContent = 'done'; s.classList.add('ok'); maybeScroll(); },
+        setError(text) { rp.textContent = text; rp.classList.add('tc-err'); const s = sum.querySelector('.tc-status'); s.textContent = 'error'; s.classList.add('err'); maybeScroll(); },
       };
     },
     setStats(s) {
@@ -3211,8 +3211,8 @@ function cbAddMsg(author, model) {
       const rp = document.createElement('pre'); rp.className = 'tc-result';
       body.append(ap, rp); el.append(sum, body); col.insertBefore(el, bubble); scroll();
       return {
-        setResult(t) { rp.textContent = t; sum.querySelector('.tc-status').textContent = 'done'; scroll(); },
-        setError(t) { rp.textContent = t; rp.classList.add('tc-err'); sum.querySelector('.tc-status').textContent = 'error'; scroll(); },
+        setResult(t) { rp.textContent = t; const s = sum.querySelector('.tc-status'); s.textContent = 'done'; s.classList.add('ok'); scroll(); },
+        setError(t) { rp.textContent = t; rp.classList.add('tc-err'); const s = sum.querySelector('.tc-status'); s.textContent = 'error'; s.classList.add('err'); scroll(); },
       };
     },
     finalize(t) { if (typing.parentElement) typing.remove(); if (t) { renderAssistantHTML(bubble, t); bubble.dataset.raw = t; } else if (!bubble.textContent) bubble.textContent = '…'; scroll(); },
@@ -3519,6 +3519,41 @@ els.cbmSave.addEventListener('click', saveCodebaseFromModal);
 els.cbmDelete.addEventListener('click', deleteCodebaseFromModal);
 els.cbmRounds.addEventListener('input', () => { els.cbmRoundsVal.textContent = '· ' + els.cbmRounds.value; });
 els.cbmReviewerOn.addEventListener('change', () => { els.cbmReviewer.disabled = !els.cbmReviewerOn.checked; });
+
+// Draggable splitters: resize the file-tree / chat columns; widths persist.
+function cbApplyPaneWidths() {
+  const grid = els.codebasePane.querySelector('.cb-grid'); if (!grid) return;
+  const tw = localStorage.getItem('mt_cb_tree_w'); const cw = localStorage.getItem('mt_cb_chat_w');
+  if (tw) grid.style.setProperty('--cb-tree-w', tw + 'px');
+  if (cw) grid.style.setProperty('--cb-chat-w', cw + 'px');
+}
+function cbInitSplitters() {
+  const grid = els.codebasePane.querySelector('.cb-grid'); if (!grid) return;
+  cbApplyPaneWidths();
+  grid.querySelectorAll('.cb-splitter').forEach((sp) => {
+    sp.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const which = sp.dataset.split;
+      sp.classList.add('dragging');
+      const rect = grid.getBoundingClientRect();
+      const move = (ev) => {
+        const min = 150, reserve = 420;
+        if (which === 'tree') { const w = Math.max(min, Math.min(rect.width - reserve, ev.clientX - rect.left)); grid.style.setProperty('--cb-tree-w', w + 'px'); }
+        else { const w = Math.max(260, Math.min(rect.width - reserve, rect.right - ev.clientX)); grid.style.setProperty('--cb-chat-w', w + 'px'); }
+      };
+      const up = () => {
+        sp.classList.remove('dragging');
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
+        try {
+          const t = parseInt(grid.style.getPropertyValue('--cb-tree-w'), 10); if (t) localStorage.setItem('mt_cb_tree_w', t);
+          const c = parseInt(grid.style.getPropertyValue('--cb-chat-w'), 10); if (c) localStorage.setItem('mt_cb_chat_w', c);
+        } catch (e) {}
+      };
+      document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+    });
+  });
+}
+cbInitSplitters();
 
 (async function boot() {
   if (await maybeOpenSharedCodebase()) return;   // a /c/<id> link opens a read-only codebase viewer
