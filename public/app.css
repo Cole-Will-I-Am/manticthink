@@ -1026,3 +1026,6 @@ textarea#input:focus { border-color: rgba(97,121,255,0.45); box-shadow: inset 0 
 .cb-ghost { background: var(--surface); border: 0.5px solid var(--border-light); color: var(--text-secondary); }
 .cb-ghost:hover { color: var(--text-primary); border-color: var(--accent); }
 @media (max-width: 860px) { .cb-cta .btn-primary { width: 100%; } .cb-cta-acts { flex: 1; } }
+/* Shared-codebase visitor view: drop the app chrome that's irrelevant to them */
+body.cb-shared #sidebar { display: none; }
+body.cb-shared .cb-back, body.cb-shared #cbSettingsBtn { display: none; }

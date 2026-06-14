@@ -3120,6 +3120,9 @@ function applyPaneVisibility() {
   const showCb = sideView === 'codebases' && (!!activeCodebaseId || cbReadOnly);
   if (els.codebasePane) els.codebasePane.classList.toggle('hidden', !showCb);
   if (els.chatPane) els.chatPane.classList.toggle('hidden', showCb);
+  // A visitor on a /c/<id> link gets a clean, chrome-free view: hide the app
+  // sidebar (New chat / Projects / Sign out, etc.) and in-app-only controls.
+  document.body.classList.toggle('cb-shared', sideView === 'codebases' && cbReadOnly);
 }
 function cbSetStatus(t) { if (els.cbStatus) els.cbStatus.textContent = t || ''; }
 function cbShowErr(t) { if (!els.cbErr) return; els.cbErr.textContent = t || ''; els.cbErr.style.display = t ? 'block' : 'none'; }
