@@ -184,6 +184,17 @@
 
     <!-- Codebase workspace (VS Code / GitHub-like): file tree + editor + build chat -->
     <div id="codebasePane" class="hidden">
+      <div id="cbCta" class="cb-cta hidden">
+        <div class="cb-cta-text">
+          <img class="wordmark" src="/seer-wordmark.svg" alt="SEER" />
+          <span>Two AI coders built this on <b>Mantic Think</b> — free, private, bring-your-own-key. Build your own codebase by chat.</span>
+        </div>
+        <div class="cb-cta-acts">
+          <button id="cbCtaStart" class="btn-primary" type="button">Build your own</button>
+          <button id="cbCtaImport" class="mm-add-btn cb-ghost" type="button">Import a copy</button>
+          <button id="cbCtaZip" class="mm-add-btn cb-ghost" type="button">Download ZIP</button>
+        </div>
+      </div>
       <div class="cb-topbar">
         <button id="cbBack" class="cb-back" title="Back to codebases">‹ Codebases</button>
         <input id="cbName" class="cb-name" spellcheck="false" />

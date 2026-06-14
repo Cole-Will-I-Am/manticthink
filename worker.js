@@ -296,7 +296,7 @@ async function handleCodebaseStore(request, env) {
   if (!body.files.every((f) => f && typeof f.path === "string" && typeof f.content === "string")) {
     return json({ error: "Invalid codebase files." }, 400);
   }
-  const payload = JSON.stringify({ name: body.name, files: body.files, models: body.models || null });
+  const payload = JSON.stringify({ name: body.name, files: body.files, models: body.models || null, messages: Array.isArray(body.messages) ? body.messages : null });
   if (payload.length > 500000) return json({ error: "Codebase too large to share — export to ZIP or push to GitHub." }, 413);
   let id = debateShortId();
   if (await env.CODEBASES.get(id)) id = debateShortId() + debateShortId().slice(0, 2);

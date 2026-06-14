@@ -89,6 +89,7 @@ const els = {
   pjPaste: $('pjPaste'), pjPasteName: $('pjPasteName'), pjPasteAdd: $('pjPasteAdd'),
   pjSave: $('pjSave'), pjDelete: $('pjDelete'), pjCancel: $('pjCancel'),
   chatPane: $('chatPane'), codebasePane: $('codebasePane'),
+  cbCta: $('cbCta'), cbCtaStart: $('cbCtaStart'), cbCtaImport: $('cbCtaImport'), cbCtaZip: $('cbCtaZip'),
   cbBack: $('cbBack'), cbName: $('cbName'), cbModels: $('cbModels'), cbStatus: $('cbStatus'), cbStop: $('cbStop'),
   cbExportBtn: $('cbExportBtn'), cbExportMenu: $('cbExportMenu'), cbSettingsBtn: $('cbSettingsBtn'),
   cbNewFile: $('cbNewFile'), cbTree: $('cbTree'), cbEditPath: $('cbEditPath'), cbCopyFile: $('cbCopyFile'), cbEdit: $('cbEdit'), cbHl: $('cbHl'),
@@ -3146,13 +3147,7 @@ function renderCbWorkspace() {
   cbShowErr(''); cbSetStatus('');
   els.codebasePane.classList.toggle('cb-readonly', !!cbReadOnly);
   els.cbEdit.readOnly = !!cbReadOnly;
-  if (cbReadOnly) {
-    const banner = document.createElement('div'); banner.className = 'cb-readonly-banner';
-    const txt = document.createElement('span'); txt.textContent = 'Viewing a shared codebase (read-only).';
-    const imp = document.createElement('button'); imp.className = 'cb-btn'; imp.type = 'button'; imp.textContent = 'Import a copy'; imp.addEventListener('click', cbImportShared);
-    const dl = document.createElement('button'); dl.className = 'cb-btn'; dl.type = 'button'; dl.textContent = 'Download ZIP'; dl.addEventListener('click', () => cbDownloadZip(currentCb));
-    banner.append(txt, imp, dl); els.cbThread.prepend(banner);
-  }
+  if (els.cbCta) els.cbCta.classList.toggle('hidden', !cbReadOnly);
 }
 const CB_FILE_SVG = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M9.2 1.5H4.5A1.5 1.5 0 0 0 3 3v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 13V5.3L9.2 1.5zM9 2.9 11.6 5.5H9.5A.5.5 0 0 1 9 5V2.9z"/></svg>';
 const CB_DIR_SVG = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1.75 3A1.75 1.75 0 0 0 0 4.75v6.5C0 12.22.78 13 1.75 13h12.5A1.75 1.75 0 0 0 16 11.25v-5A1.75 1.75 0 0 0 14.25 4.5H7.8L6.6 3.3A1.75 1.75 0 0 0 5.36 2.85H1.75z"/></svg>';
@@ -3397,7 +3392,14 @@ async function shareCodebase() {
   if (!currentCb.files.length) { toast('Add files before sharing.'); return; }
   toast('Creating share link…');
   try {
-    const slim = { name: currentCb.name, files: currentCb.files.map((f) => ({ path: f.path, content: f.content })), models: currentCb.models };
+    const slim = {
+      name: currentCb.name,
+      files: currentCb.files.map((f) => ({ path: f.path, content: f.content })),
+      models: currentCb.models,
+      // Include the build conversation (text only — drop bulky tool rounds) so a
+      // visitor sees how the two AIs built it, like a shared debate transcript.
+      messages: (currentCb.messages || []).map((m) => ({ role: m.role, author: m.author, content: m.content })),
+    };
     const resp = await fetch('/api/codebase', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(slim) });
     const d = await resp.json().catch(() => ({}));
     if (resp.ok && d.id) {
@@ -3426,9 +3428,17 @@ function openSharedCodebase(rec) {
   showApp(true);
   setSideView('codebases');
   cbReadOnly = true; cbCollapsed = new Set();
-  currentCb = { id: 'shared-' + Date.now(), name: rec.name || 'Shared codebase', files: (rec.files || []).map((f) => ({ path: f.path, content: f.content, updatedAt: Date.now() })), messages: [], models: rec.models || {}, reviewerEnabled: false, rounds: 2 };
+  currentCb = { id: 'shared-' + Date.now(), name: rec.name || 'Shared codebase', files: (rec.files || []).map((f) => ({ path: f.path, content: f.content, updatedAt: Date.now() })), messages: Array.isArray(rec.messages) ? rec.messages : [], models: rec.models || {}, reviewerEnabled: !!(rec.models && rec.models.reviewer), rounds: 2 };
   activeCodebaseId = currentCb.id; cbActivePath = null;
   renderCbWorkspace(); renderSidebar(); applyPaneVisibility();
+}
+// "Build your own" from a shared codebase: leave the read-only viewer and
+// either open the create modal (if the visitor has a key) or reveal the gate.
+function cbStartOwnFromShared() {
+  cbReadOnly = false;
+  closeCodebase();
+  if (apiKey || localMode) { switchSideView('codebases'); openCodebaseModal(null); }
+  else { showApp(false); }
 }
 function cbImportShared() {
   if (!currentCb) return;
@@ -3533,6 +3543,9 @@ els.cbghDisconnect.addEventListener('click', () => { disconnectGithub(); cbghTog
 /* ---- workspace event wiring ---- */
 function cbAutosize() { els.cbInput.style.height = 'auto'; els.cbInput.style.height = Math.min(els.cbInput.scrollHeight, 160) + 'px'; }
 els.cbBack.addEventListener('click', closeCodebase);
+els.cbCtaStart.addEventListener('click', cbStartOwnFromShared);
+els.cbCtaImport.addEventListener('click', cbImportShared);
+els.cbCtaZip.addEventListener('click', () => cbDownloadZip(currentCb));
 els.cbNewFile.addEventListener('click', cbNewFile);
 els.cbStop.addEventListener('click', () => { if (cbController) cbController.abort(); });
 els.cbSettingsBtn.addEventListener('click', () => { if (currentCb) openCodebaseModal(currentCb.id); });
