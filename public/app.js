@@ -894,6 +894,7 @@ const VISUALS_HINT = [
   '- Diagrams: a fenced ```mermaid block (flowchart, sequence, pie, gantt, timeline, mindmap, state, class).',
   '- Data charts: a fenced ```chart block whose body is a Chart.js v4 JSON config, e.g. {"type":"bar","data":{"labels":[...],"datasets":[{"label":"...","data":[...]}]}}. JSON only, no JavaScript.',
   '- Tables: a normal GitHub-flavored Markdown table.',
+  '- Documents: when the user asks you to write a document, report, letter, or anything they may want to download, wrap the whole thing in a fenced ```document block. Its body is normal Markdown (start with a # Title); it renders as a document card with a one-click "Download PDF" button.',
   'Use a visual only when it genuinely aids understanding, and keep accompanying prose concise. Do not describe these formats or your tools to the user — just produce the visual.',
 ].join('\n');
 
@@ -977,6 +978,107 @@ function renderVisuals(bubble) {
     ensureChart().then((C) => { try { new C(canvas, cfg); maybeScroll(); } catch (e) { holder.className = 'diagram-err'; holder.textContent = 'Chart error: ' + ((e && e.message) || e); } })
       .catch(() => { holder.className = 'diagram-err'; holder.textContent = 'Chart failed to load.'; });
   });
+  renderDocuments(bubble);
+}
+
+/* ---------- Documents → downloadable PDF ---------- */
+// A ```document fenced block becomes a self-contained document card: the model's
+// markdown is rendered into it and a "Download PDF" button exports just that card.
+// The first level-1 heading (# Title) becomes the document title.
+function renderDocuments(bubble) {
+  bubble.querySelectorAll('pre code.language-document, pre code.language-doc').forEach((code) => {
+    const pre = code.closest('pre'); if (!pre) return;
+    const src = code.textContent || '';
+    const card = document.createElement('div'); card.className = 'doc-card';
+    const body = document.createElement('div'); body.className = 'doc-body';
+    body.innerHTML = renderMarkdown(src);
+    body.querySelectorAll('pre code').forEach((el) => { try { window.hljs && hljs.highlightElement(el); } catch (e) {} });
+    const h1 = body.querySelector('h1');
+    const title = (h1 && h1.textContent.trim()) || 'Document';
+    const bar = document.createElement('div'); bar.className = 'doc-toolbar';
+    const label = document.createElement('span'); label.className = 'doc-label'; label.textContent = '📄 ' + title;
+    const dl = document.createElement('button'); dl.className = 'doc-pdf-btn'; dl.type = 'button'; dl.textContent = 'Download PDF';
+    dl.addEventListener('click', () => exportToPDF(body, title));
+    bar.append(label, dl);
+    card.append(bar, body);
+    pre.replaceWith(card);
+  });
+}
+
+/* ---------- PDF export (print-to-PDF: vector text, no dependencies) ---------- */
+// Clones a rendered node, strips interactive chrome, and bakes live <canvas>
+// charts into static images so the exported document is self-contained.
+function staticClone(node) {
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('.code-actions, .actions, .typing, .doc-toolbar, .runout, .stats, details.thinking, details.toolcall')
+    .forEach((el) => el.remove());
+  const src = node.querySelectorAll('canvas');
+  clone.querySelectorAll('canvas').forEach((c, i) => {
+    try {
+      const img = document.createElement('img');
+      img.src = src[i].toDataURL('image/png');
+      c.replaceWith(img);
+    } catch (e) { c.remove(); }
+  });
+  return clone;
+}
+
+const PDF_CSS = `
+  @page { margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #16181d; line-height: 1.6; font-size: 12pt; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .pdf-head { display: flex; align-items: baseline; gap: 12px; border-bottom: 2px solid #6179ff;
+    padding-bottom: 10px; margin-bottom: 22px; }
+  .pdf-brand { font-weight: 700; letter-spacing: 0.12em; color: #6179ff; font-size: 13pt; }
+  .pdf-title { font-weight: 600; font-size: 11pt; color: #5a606b; }
+  main h1, main h2, main h3, main h4 { line-height: 1.3; font-weight: 600; margin: 1.1em 0 0.5em; page-break-after: avoid; }
+  main h1 { font-size: 1.7em; } main h2 { font-size: 1.35em; } main h3 { font-size: 1.15em; }
+  main h1:first-child { margin-top: 0; }
+  main p { margin: 0.6em 0; }
+  main ul, main ol { margin: 0.6em 0; padding-left: 1.5em; }
+  main li { margin: 0.3em 0; }
+  main a { color: #3651d6; }
+  main blockquote { margin: 0.8em 0; padding: 4px 0 4px 14px; border-left: 3px solid #6179ff; color: #5a606b; }
+  main hr { border: none; border-top: 1px solid #d7dae0; margin: 1.3em 0; }
+  main code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em;
+    background: #f0f1f4; padding: 1.5px 5px; border-radius: 4px; }
+  main pre { background: #f6f7f9; border: 1px solid #e2e4e9; border-radius: 8px; padding: 12px 14px;
+    overflow-x: auto; page-break-inside: avoid; }
+  main pre code { background: none; padding: 0; font-size: 0.82em; line-height: 1.5; }
+  main table { border-collapse: collapse; margin: 0.8em 0; width: 100%; page-break-inside: avoid; }
+  main th, main td { border: 1px solid #d7dae0; padding: 6px 10px; text-align: left; font-size: 0.92em; }
+  main th { background: #f0f1f4; font-weight: 600; }
+  main img, main svg { max-width: 100%; height: auto; }
+  .diagram, .chart-box { margin: 0.8em 0; padding: 10px; border: 1px solid #e2e4e9; border-radius: 8px;
+    text-align: center; page-break-inside: avoid; height: auto; }
+`;
+
+function exportToPDF(node, title) {
+  const safe = ((title || '').trim()) || 'SƎER document';
+  const clone = staticClone(node);
+  const html = '<!doctype html><html><head><meta charset="utf-8"><title>' + escapeHtml(safe) +
+    '</title><style>' + PDF_CSS + '</style></head><body><header class="pdf-head">' +
+    '<span class="pdf-brand">SƎER</span><span class="pdf-title">' + escapeHtml(safe) +
+    '</span></header><main>' + clone.innerHTML + '</main></body></html>';
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(frame);
+  let removed = false;
+  const cleanup = () => { if (removed) return; removed = true; setTimeout(() => frame.remove(), 500); };
+  const go = () => {
+    try {
+      const w = frame.contentWindow;
+      w.onafterprint = cleanup;
+      w.focus(); w.print();
+      setTimeout(cleanup, 60000);   // fallback if onafterprint never fires
+    } catch (e) { cleanup(); toast('Could not open the PDF dialog.'); }
+  };
+  const doc = frame.contentDocument || frame.contentWindow.document;
+  doc.open(); doc.write(html); doc.close();
+  // Give the iframe a tick to lay out fonts/images before invoking print.
+  setTimeout(go, 200);
 }
 
 /* ---------- Code execution (sandboxed) ---------- */
@@ -1626,9 +1728,14 @@ function buildAssistantNode() {
         copy.textContent = 'Copied'; copy.classList.add('ok');
         setTimeout(() => { copy.textContent = 'Copy'; copy.classList.remove('ok'); }, 1200);
       });
+      const pdf = document.createElement('button'); pdf.className = 'act-btn'; pdf.type = 'button'; pdf.textContent = 'PDF';
+      pdf.addEventListener('click', () => {
+        const h = bubble.querySelector('h1, h2');
+        exportToPDF(bubble, (h && h.textContent.trim()) || 'SƎER reply');
+      });
       const regen = document.createElement('button'); regen.className = 'act-btn'; regen.type = 'button'; regen.textContent = 'Regenerate';
       regen.addEventListener('click', regenerate);
-      row.appendChild(copy); row.appendChild(regen); col.appendChild(row);
+      row.appendChild(copy); row.appendChild(pdf); row.appendChild(regen); col.appendChild(row);
     },
   };
 }
@@ -2561,15 +2668,15 @@ function participantPersona(mode, p, n, topic) {
     const role = p.side === 'A'
       ? 'the PROPONENT, arguing IN FAVOR of the proposition'
       : 'the OPPONENT, arguing AGAINST the proposition';
-    return `You are ${role} in a structured debate. Topic: "${topic}". Make your strongest case, directly rebut the other side's most recent points, and stay strictly on topic. Be substantive but concise: under 150 words. Do not restate your role, narrate stage directions, or prefix your name — just give the argument in plain persuasive prose.`;
+    return `You are ${role} in a structured debate. Topic: "${topic}". Make your strongest case, directly rebut the other side's most recent points, and stay strictly on topic. Be substantive but concise: under 150 words. Format for easy reading: 2–3 short paragraphs, lead with your strongest point, and use Markdown **bold** to highlight your single key claim. Do not restate your role, narrate stage directions, or prefix your name.`;
   }
   if (mode === 'discuss') {
-    return `You are ${p.label}, one of two thoughtful analysts discussing a question together. Topic: "${topic}". Build on or respectfully challenge the other analyst's most recent points, add fresh angles, and avoid repeating what's already been said. Be concise: under 150 words. Do not prefix your name or narrate stage directions.`;
+    return `You are ${p.label}, one of two thoughtful analysts discussing a question together. Topic: "${topic}". Build on or respectfully challenge the other analyst's most recent points, add fresh angles, and avoid repeating what's already been said. Be concise: under 150 words, in 2–3 short paragraphs; you may use Markdown **bold** for a key point. Do not prefix your name or narrate stage directions.`;
   }
   // round table
   const hasRole = !/^Seat \d+$/.test(p.label);
   const roleLine = hasRole ? ` Argue from your assigned perspective as "${p.label}".` : '';
-  return `You are ${p.label}, one of ${n} participants at a round-table discussion. Topic: "${topic}".${roleLine} Engage directly with the most recent points from the other participants, add a fresh angle, and avoid repeating what's already been said. Be concise: under 150 words. Do not prefix your name or narrate stage directions.`;
+  return `You are ${p.label}, one of ${n} participants at a round-table discussion. Topic: "${topic}".${roleLine} Engage directly with the most recent points from the other participants, add a fresh angle, and avoid repeating what's already been said. Be concise: under 150 words, in 2–3 short paragraphs; you may use Markdown **bold** for a key point. Do not prefix your name or narrate stage directions.`;
 }
 function debateUserPrompt(topic, transcript, label, mode) {
   if (!transcript.length) {
@@ -2582,12 +2689,12 @@ function debateUserPrompt(topic, transcript, label, mode) {
 }
 function synthesisPersona(mode, topic) {
   if (mode === 'debate') {
-    return `You are an impartial moderator closing a debate on: "${topic}". Read the full transcript and write a brief, neutral synthesis: the single strongest point from each side, any genuine common ground, and a balanced judgment of which case was more persuasive and why. Be fair to both sides. Under 180 words. Do not prefix your name or narrate stage directions.`;
+    return `You are an impartial moderator closing a debate on: "${topic}". Read the full transcript and write a brief, neutral synthesis. Be fair to both sides; under 180 words. Use short Markdown-bold labels so it's easy to scan, e.g. **Proponent's strongest point:** …, **Opponent's strongest point:** …, **Common ground:** …, **Verdict:** … (who was more persuasive and why). Do not prefix your name or narrate stage directions.`;
   }
   if (mode === 'discuss') {
-    return `You are synthesizing a discussion on: "${topic}". Read the full transcript and summarize the key insights, where the analysts agreed and differed, and the most important takeaway. Neutral and concise — under 180 words. Do not prefix your name.`;
+    return `You are synthesizing a discussion on: "${topic}". Read the full transcript and write a neutral, easy-to-scan summary under 180 words, using short Markdown-bold labels, e.g. **Key insights:** …, **Where they agreed:** …, **Where they differed:** …, **Takeaway:** … Do not prefix your name.`;
   }
-  return `You are an impartial moderator closing a round-table discussion on: "${topic}". Read the full transcript and write a brief, neutral synthesis: each participant's strongest contribution, where they converged and diverged, and the key takeaway. Be fair to all. Under 200 words. Do not prefix your name.`;
+  return `You are an impartial moderator closing a round-table discussion on: "${topic}". Read the full transcript and write a brief, neutral synthesis under 200 words, fair to all, using short Markdown-bold labels so it's easy to scan, e.g. **Each participant's best point:** …, **Where they converged:** …, **Where they diverged:** …, **Takeaway:** … Do not prefix your name.`;
 }
 function synthesisUserPrompt(topic, transcript, mode) {
   const lines = transcript.map((t) => `[${t.label}]: ${t.text}`).join('\n\n');
