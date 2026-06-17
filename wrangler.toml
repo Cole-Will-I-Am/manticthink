@@ -29,7 +29,9 @@ id = "a77d67b50b834f9aaa04eabf9e944e44"
 # picker; set these to the Ollama models you actually have access to.
 [vars]
 OLLAMA_BASE_URL = "https://ollama.com"
-CHAT_MODELS = "gpt-oss:120b,gpt-oss:20b,deepseek-v3.2,qwen3-coder:480b,glm-5,kimi-k2.7-code,kimi-k2.6,qwen3.5:397b,minimax-m3,minimax-m2.7,nemotron-3-ultra,gemma3:27b"
+# Fallback list shown only if the live per-key catalog can't be fetched; the
+# app normally auto-loads every model the user's key can access.
+CHAT_MODELS = "gpt-oss:120b,gpt-oss:20b,qwen3-coder:480b,qwen3-coder-next,qwen3.5:397b,deepseek-v4-pro,deepseek-v4-flash,deepseek-v3.2,deepseek-v3.1:671b,glm-5.2,glm-5.1,glm-5,glm-4.7,kimi-k2.7-code,kimi-k2.6,kimi-k2.5,minimax-m3,minimax-m2.7,minimax-m2.5,minimax-m2.1,gemini-3-flash-preview,gemma4:31b,gemma3:27b,gemma3:12b,gemma3:4b,mistral-large-3:675b,devstral-2:123b,devstral-small-2:24b,ministral-3:14b,ministral-3:8b,ministral-3:3b,nemotron-3-ultra,nemotron-3-super,nemotron-3-nano:30b,rnj-1:8b"
 DEFAULT_MODEL = "gpt-oss:120b"
 
 # Bring-your-own-key: each visitor enters their own Ollama API key in the browser.

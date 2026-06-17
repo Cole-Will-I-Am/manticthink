@@ -1320,6 +1320,7 @@ function showApp(show) {
 }
 /* ---------- Model list (per-user, curated) ---------- */
 const MODELS_KEY = 'mt_models';
+const ALL_MODELS_FLAG = 'mt_models_all_v1';   // one-time "loaded the full catalog" marker
 let catalogModels = [];
 let catalogLoaded = false;
 
@@ -1348,9 +1349,41 @@ function populateModelSelect() {
     }
     els.model.appendChild(og);
   }
-  for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m || 'default'; els.model.appendChild(o); }
+  // Group the models by family so a long list stays navigable.
+  const FAM_ORDER = ['GPT-OSS', 'Qwen', 'DeepSeek', 'GLM', 'Kimi', 'MiniMax', 'Gemini', 'Gemma', 'Mistral', 'Nemotron', 'Llama', 'Other'];
+  const groups = {};
+  for (const m of list) { const f = modelFamily(m); (groups[f] = groups[f] || []).push(m); }
+  const fams = FAM_ORDER.filter((f) => groups[f]);
+  for (const f in groups) if (!fams.includes(f)) fams.push(f);
+  const realFams = fams.filter((f) => !(groups[f].length === 1 && groups[f][0] === ''));
+  if (realFams.length <= 1) {                 // single/empty list → ungrouped
+    for (const m of list) { const o = document.createElement('option'); o.value = m; o.textContent = m || 'default'; els.model.appendChild(o); }
+  } else {
+    for (const f of fams) {
+      const og = document.createElement('optgroup'); og.label = f;
+      for (const m of groups[f]) { const o = document.createElement('option'); o.value = m; o.textContent = m || 'default'; og.appendChild(o); }
+      els.model.appendChild(og);
+    }
+  }
   const values = presets.map((p) => 'preset:' + p.id).concat(list);
   if (values.includes(cur)) els.model.value = cur;
+}
+// Map a model id to its display family for the grouped picker.
+function modelFamily(m) {
+  const s = (m || '').toLowerCase();
+  if (!s) return 'Other';
+  if (s.startsWith('gpt-oss')) return 'GPT-OSS';
+  if (s.startsWith('qwen')) return 'Qwen';
+  if (s.startsWith('deepseek')) return 'DeepSeek';
+  if (s.startsWith('glm')) return 'GLM';
+  if (s.startsWith('kimi')) return 'Kimi';
+  if (s.startsWith('minimax')) return 'MiniMax';
+  if (s.startsWith('gemini')) return 'Gemini';
+  if (s.startsWith('gemma')) return 'Gemma';
+  if (s.startsWith('mistral') || s.startsWith('ministral') || s.startsWith('devstral') || s.startsWith('codestral') || s.startsWith('magistral')) return 'Mistral';
+  if (s.startsWith('nemotron')) return 'Nemotron';
+  if (s.startsWith('llama')) return 'Llama';
+  return 'Other';
 }
 // The picker may hold a preset value; requests always need the base model name.
 function selectedModel() {
@@ -1373,7 +1406,19 @@ async function loadModels() {
     populateModelSelect();
     return;
   }
-  if (!getUserModels()) {                       // seed from the site default once
+  // Cloud: surface every model the user's key can access, right away. Pull the
+  // live catalog (/api/catalog authenticates with the key); use it as the picker
+  // list — seed it for new users, one-time-merge it for users who only have the
+  // old default list — falling back to the bundled /api/models list.
+  if (!catalogLoaded) { try { await loadCatalog(); } catch (e) {} }
+  if (catalogModels && catalogModels.length) {
+    if (!getUserModels()) {
+      setUserModels(catalogModels);
+    } else if (!localStorage.getItem(ALL_MODELS_FLAG)) {
+      setUserModels([...(getUserModels() || []), ...catalogModels]);
+    }
+    try { localStorage.setItem(ALL_MODELS_FLAG, '1'); } catch (e) {}
+  } else if (!getUserModels()) {
     try { const r = await fetch('/api/models'); const d = await r.json(); if (d.models && d.models.length) setUserModels(d.models); } catch (e) {}
   }
   populateModelSelect();
