@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logos — Privacy Policy</title>
+<meta name="robots" content="index,follow">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: #15120D; color: #F4EFE6;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 22px 96px; }
+  h1 { font-size: 30px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 19px; margin: 38px 0 10px; color: #F4EFE6; }
+  .updated { color: #A89C88; font-size: 14px; margin-bottom: 28px; }
+  p, li { color: #DCD3C4; }
+  a { color: #CBA468; }
+  strong { color: #F4EFE6; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .lede { font-size: 17px; color: #EDE6D8; }
+  .note {
+    margin: 22px 0; padding: 14px 16px; border-left: 3px solid #B0894F;
+    background: rgba(176,137,79,0.10); border-radius: 8px; color: #EDE6D8; font-size: 15px;
+  }
+  hr { border: 0; border-top: 1px solid #2E2820; margin: 40px 0; }
+  footer { color: #8C8170; font-size: 13px; }
+  code { background: #262019; padding: 1px 5px; border-radius: 5px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Logos — Privacy Policy</h1>
+  <div class="updated">Last updated: June 22, 2026</div>
+
+  <p class="lede">Logos is an end-to-end encrypted (E2EE) messenger. It is designed so that
+  <strong>no one but you and the people you message — not even us — can read your
+  messages.</strong> This policy explains what data exists, where it lives, and the few
+  cases where data leaves your device.</p>
+
+  <div class="note"><strong>Beta notice.</strong> Logos is experimental software in active
+  development and has <strong>not yet undergone an independent security audit.</strong>
+  Please don’t rely on it for high-stakes secrets until it has been audited.</div>
+
+  <h2>The short version</h2>
+  <ul>
+    <li><strong>No account, no personal data.</strong> Logos needs no email, phone number, or
+      real name. Your identity is a cryptographic key generated on your device; your username
+      is just a label you choose. There is no password and no profile.</li>
+    <li><strong>Messages are end-to-end encrypted.</strong> Our relay server only ever sees
+      encrypted ciphertext it cannot decrypt — never your message text, photos, or files.</li>
+    <li><strong>Your data stays on your device.</strong> Chat history, contacts, nicknames, and
+      photos are stored only on your phone, encrypted at rest, and excluded from device backups.
+      They are never uploaded to us.</li>
+    <li><strong>No analytics, ads, trackers, or third-party data-collection SDKs.</strong></li>
+    <li><strong>We do not sell or share your data,</strong> and we are technically unable to
+      read your messages.</li>
+  </ul>
+
+  <h2>What the relay server can and cannot see</h2>
+  <p>To deliver a message between two people, Logos uses a minimal relay server. The relay:</p>
+  <ul>
+    <li><strong>Cannot read</strong> message content, attachments, or AI content — everything is
+      encrypted on your device before it is sent (PQXDH key agreement + Double Ratchet), and the
+      sender is concealed from the relay using sealed-sender delivery.</li>
+    <li><strong>Temporarily holds</strong> encrypted, opaque message envelopes only until the
+      recipient’s device fetches them, after which they are deleted.</li>
+    <li><strong>Stores</strong> the mapping from your chosen username to your public key, and a
+      pool of one-time public “prekeys,” so others can start an encrypted conversation with you.</li>
+    <li><strong>Necessarily processes</strong> limited routing metadata (such as the destination
+      mailbox and timing) to deliver messages, as any messaging service must.</li>
+  </ul>
+
+  <h2>Data stored on your device</h2>
+  <ul>
+    <li>Your identity key and 24-word recovery phrase (the recovery phrase is shown only when you
+      choose to back it up).</li>
+    <li>Your conversations and message history, encrypted at rest with a device-only key.</li>
+    <li>Contacts, nicknames, and any contact photos you add — all local and never shared.</li>
+  </ul>
+  <p>If you delete a chat, its messages and any attached files are removed from your device. If
+  you lose your device without your recovery phrase, that data cannot be recovered.</p>
+
+  <h2>Optional AI features (off by default)</h2>
+  <p>Logos includes optional AI features (such as “Catch me up” summaries and an in-app
+  assistant). These run only if you turn them on, and you choose the provider:</p>
+  <ul>
+    <li><strong>On-device AI</strong> — runs entirely on your phone. Nothing leaves the device.</li>
+    <li><strong>Bring-your-own-key (cloud) AI</strong> — if you add your own API key for a provider
+      (e.g. Anthropic, OpenAI, or your own Ollama server), the specific content you ask the AI to
+      process is sent <strong>directly from your device to that provider</strong> using your key.
+      That content leaves end-to-end encryption and is handled under that provider’s privacy policy.
+      It happens only per request, with an on-screen notice, and is <strong>never routed through the
+      Logos relay.</strong> Your API keys are stored only on your device (in the system Keychain)
+      and are never sent to us.</li>
+  </ul>
+
+  <h2>Third parties</h2>
+  <ul>
+    <li><strong>Network transport</strong> is carried over Cloudflare; it conveys only encrypted
+      traffic.</li>
+    <li><strong>AI providers</strong> receive content only if you opt in to cloud AI with your own
+      key, as described above.</li>
+    <li><strong>Apple</strong> distributes the app (App Store / TestFlight) and provides standard
+      platform services. Any data Apple collects is governed by Apple’s policies.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>Logos is not directed to children under 13, and we do not knowingly collect data from them.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, we will update the date above and post the revised version at this URL.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about privacy can be raised through the project repository at
+  <a href="https://github.com/Cole-Will-I-Am/Logos">github.com/Cole-Will-I-Am/Logos</a>.</p>
+
+  <hr>
+  <footer>Logos is an experimental, end-to-end encrypted messenger. This policy describes the app’s
+  current behavior and may evolve as the app develops.</footer>
+</div>
+</body>
+</html>
