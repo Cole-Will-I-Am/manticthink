@@ -7,6 +7,10 @@ workers_dev = true
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# Run the Worker before serving static assets, so visit-counting fires on the page load.
+# The Worker's catch-all serves the page/assets via env.ASSETS; trackVisit only counts
+# document navigations, so asset requests through the Worker aren't miscounted.
+run_worker_first = true
 
 # Aggregate, privacy-preserving event counters (no keys, no message content).
 # Tracks the connect funnel: key-validation attempts/outcomes and chats sent.

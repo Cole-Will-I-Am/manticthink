@@ -39,6 +39,32 @@ function track(env, event, outcome, model) {
   } catch (e) { /* never let telemetry affect the request */ }
 }
 
+// Is this request a top-level page navigation (vs an asset/API call)? Only these count
+// as visits.
+function isPageView(request, url) {
+  const p = url.pathname;
+  if (!(p === "/" || /^\/[cd]\/[A-Za-z0-9_-]+$/.test(p))) return false;
+  const dest = request.headers.get("Sec-Fetch-Dest");
+  if (dest) return dest === "document";
+  return (request.headers.get("Accept") || "").includes("text/html");
+}
+
+// Privacy-friendly unique-visitor counter: logs a "pageview" with a hash of (IP + UA + day),
+// truncated. The hash rotates daily and stores no IP/PII — count(DISTINCT) of it per day gives
+// unique human visitors. Bots are tagged, not counted as humans.
+async function trackVisit(env, request) {
+  try {
+    if (!env.AE || typeof env.AE.writeDataPoint !== "function") return;
+    const ua = request.headers.get("User-Agent") || "";
+    const bot = /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|whatsapp|telegram|discord|linkedinbot|twitterbot|slackbot|headless|curl|wget|python-requests|go-http|axios|node-fetch/i.test(ua);
+    const ip = request.headers.get("CF-Connecting-IP") || "0";
+    const day = new Date().toISOString().slice(0, 10);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip + "|" + ua + "|" + day + "|mtv1"));
+    const vk = Array.from(new Uint8Array(digest).slice(0, 12)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    env.AE.writeDataPoint({ indexes: [vk], blobs: ["pageview", bot ? "bot" : "human", vk], doubles: [1] });
+  } catch (e) { /* telemetry must never break a request */ }
+}
+
 function modelList(env) {
   return (env.CHAT_MODELS || FALLBACK_MODELS)
     .split(",").map((m) => m.trim()).filter(Boolean);
@@ -373,6 +399,7 @@ async function handleCodebaseOg(id, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (request.method === "GET" && isPageView(request, url)) await trackVisit(env, request);
     {
       const ogm = url.pathname.match(/^\/c\/([A-Za-z0-9_-]+)\/og\.png$/);
       if (ogm) return handleCodebaseOg(ogm[1], env, url);
